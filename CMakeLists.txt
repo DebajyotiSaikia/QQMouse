@@ -54,9 +54,11 @@ if(WIN32)
 elseif(APPLE)
     enable_language(OBJCXX)
     list(APPEND SM_PLATFORM_SOURCES
-        src/platform/crypto_mac.mm        # Sections 5.4/7: CommonCrypto + Security.framework
+        # macOS native backends are not implemented yet (see todo.md, Step 6). The
+        # portable sources above still compile here; the app stub links only what it
+        # references, so no macOS crypto symbols are required for the stub build.
+        # src/platform/crypto_mac.mm      # Sections 5.4/7: CommonCrypto + Security.framework
         # src/platform/capture_mac.mm     # Section 3.1
-        # ... added as sections land
     )
 endif()
 
