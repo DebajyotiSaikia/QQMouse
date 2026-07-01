@@ -1,0 +1,6 @@
+// Skittermouse application icon resource.
+//
+// Our own mouse-in-ring art, PNG-compressed to ~20 KB (packaging/skittermouse.ico).
+// The lowest-numbered ICON resource becomes the executable's display icon in
+// Explorer, the taskbar, and Alt-Tab. Reused as the NSIS installer icon.
+1 ICON "skittermouse.ico"

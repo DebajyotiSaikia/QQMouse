@@ -50,6 +50,12 @@ add_executable(skittermouse
 target_link_libraries(skittermouse PRIVATE skittermouse_core)
 
 if(WIN32)
+    # Embed our own application icon (shown in Explorer, the taskbar, and Alt-Tab,
+    # and reused as the installer icon below). Compact ~20 KB PNG-frame .ico --
+    # packaging/skittermouse.ico referenced by packaging/skittermouse.rc.
+    target_sources(skittermouse PRIVATE packaging/skittermouse.rc)
+    target_include_directories(skittermouse PRIVATE packaging)
+
     # System libs are linked as the features that need them land (all native,
     # zero third-party -- Section 16): ws2_32 (Section 5/6), bcrypt (Section 7),
     # shell/comctl (Section 10), etc.
@@ -77,6 +83,12 @@ set(CPACK_PACKAGE_DESCRIPTION_SUMMARY
     "Software KVM: control multiple computers with one mouse and keyboard")
 set(CPACK_PACKAGE_INSTALL_DIRECTORY "Skittermouse")
 
+# Create Start-Menu (and Desktop) shortcuts so the app is findable after install.
+# Format: <exe-name-without-.exe> <Start-Menu label>. NSIS looks for the exe under
+# the install tree's bin/ (matching install(TARGETS ... RUNTIME DESTINATION bin)).
+set(CPACK_PACKAGE_EXECUTABLES "skittermouse" "Skittermouse")
+set(CPACK_CREATE_DESKTOP_LINKS "skittermouse")
+
 # Terms the user must accept during installation, packaged into both installers:
 # NSIS shows a license page gated by an "I Agree" button; the macOS DMG shows a
 # software license agreement (SLA) that must be accepted before it will mount.
@@ -87,6 +99,10 @@ if(WIN32)
     set(CPACK_NSIS_DISPLAY_NAME "Skittermouse")
     set(CPACK_NSIS_PACKAGE_NAME "Skittermouse")
     set(CPACK_NSIS_ENABLE_UNINSTALL_BEFORE_INSTALL ON)
+    # Our own icon on the installer/uninstaller and the Add/Remove Programs entry.
+    set(CPACK_NSIS_MUI_ICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/skittermouse.ico")
+    set(CPACK_NSIS_MUI_UNIICON "${CMAKE_CURRENT_SOURCE_DIR}/packaging/skittermouse.ico")
+    set(CPACK_NSIS_INSTALLED_ICON_NAME "bin\\skittermouse.exe")
 elseif(APPLE)
     set(CPACK_GENERATOR "DragNDrop")
     set(CPACK_DMG_SLA_USE_RESOURCE_FILE_LICENSE ON)
