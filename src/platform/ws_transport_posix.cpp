@@ -50,7 +50,30 @@ public:
         if (getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0) return false;
         sock_ = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if (sock_ < 0) { freeaddrinfo(res); return false; }
-        if (::connect(sock_, res->ai_addr, res->ai_addrlen) != 0) {
+        // Non-blocking connect with a bounded timeout, so dialing an offline peer
+        // can't stall the dial loop (or app shutdown) for the full OS SYN timeout.
+        setNonBlocking(sock_);
+        int cr = ::connect(sock_, res->ai_addr, res->ai_addrlen);
+        bool connectedOk = (cr == 0);
+        if (!connectedOk && (errno == EINPROGRESS || errno == EWOULDBLOCK)) {
+            fd_set wr;
+            FD_ZERO(&wr);
+            FD_SET(sock_, &wr);
+            timeval tv{3, 0}; // 3s connect timeout
+            if (select(sock_ + 1, nullptr, &wr, nullptr, &tv) > 0 && FD_ISSET(sock_, &wr)) {
+                int err = 0;
+                socklen_t len = sizeof(err);
+                getsockopt(sock_, SOL_SOCKET, SO_ERROR, &err, &len);
+                connectedOk = (err == 0);
+            }
+        }
+        // Back to blocking for the handshake reads (recv switches to non-blocking
+        // again once the WebSocket upgrade completes).
+        {
+            int flags = fcntl(sock_, F_GETFL, 0);
+            if (flags >= 0) fcntl(sock_, F_SETFL, flags & ~O_NONBLOCK);
+        }
+        if (!connectedOk) {
             freeaddrinfo(res);
             ::close(sock_);
             sock_ = -1;

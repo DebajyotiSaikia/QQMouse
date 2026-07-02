@@ -48,7 +48,26 @@ public:
         if (getaddrinfo(host.c_str(), portStr.c_str(), &hints, &res) != 0) return false;
         sock_ = socket(res->ai_family, res->ai_socktype, res->ai_protocol);
         if (sock_ == INVALID_SOCKET) { freeaddrinfo(res); return false; }
-        if (::connect(sock_, res->ai_addr, static_cast<int>(res->ai_addrlen)) == SOCKET_ERROR) {
+        // Non-blocking connect with a bounded timeout, so dialing an offline peer
+        // can't stall the dial loop (or app shutdown) for the full OS SYN timeout.
+        u_long nb = 1;
+        ioctlsocket(sock_, FIONBIO, &nb);
+        int cr = ::connect(sock_, res->ai_addr, static_cast<int>(res->ai_addrlen));
+        bool connectedOk = (cr == 0);
+        if (!connectedOk && WSAGetLastError() == WSAEWOULDBLOCK) {
+            fd_set wr;
+            FD_ZERO(&wr);
+            FD_SET(sock_, &wr);
+            timeval tv{3, 0}; // 3s connect timeout
+            if (select(0, nullptr, &wr, nullptr, &tv) > 0 && FD_ISSET(sock_, &wr)) {
+                int err = 0, len = sizeof(err);
+                getsockopt(sock_, SOL_SOCKET, SO_ERROR, reinterpret_cast<char*>(&err), &len);
+                connectedOk = (err == 0);
+            }
+        }
+        u_long bl = 0;
+        ioctlsocket(sock_, FIONBIO, &bl); // blocking again for the handshake reads
+        if (!connectedOk) {
             freeaddrinfo(res);
             closesocket(sock_);
             sock_ = INVALID_SOCKET;
