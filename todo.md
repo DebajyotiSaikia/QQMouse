@@ -30,8 +30,12 @@ is not yet built** — as each item lands, delete it from here.
   **native file copy/paste** (delay-render IDataObject → on-demand encrypted /files channel), and
   a **file debug log** (`%APPDATA%\Skittermouse\log.txt`); macOS has the Carbon hotkey + NSPanel
   picker. **Windows WS transport is now wss (Schannel TLS)**; POSIX WS transport for macOS/Linux.
-- Remaining items all need real hardware (two Windows machines, a Mac desktop, or Explorer/Finder)
-  to build correctly _and_ validate — see below.
+- Remaining items are **macOS-only** and share one hard blocker (see "macOS product" below);
+  the **Windows product is feature-complete**. Two field bugs were just fixed + CI-green:
+  (1) one-way discovery when a **VPN** is up — the beacon now sends to every interface's directed
+  broadcast, so the LAN NIC is always covered regardless of the default route; (2) the installer
+  now opens the app's firewall ports, stops a running instance before reinstall, and the app has a
+  single-instance guard so two copies never fight over the fixed ports.
 
 ---
 
@@ -48,6 +52,22 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
 
 ## By build order (spec §17)
 
+### macOS product — the one blocker behind every remaining item
+
+All unchecked items below are macOS. They are gated on a single hard problem: **SecureTransport
+(the native TLS API) requires a server *certificate identity*, and macOS has no API to mint a
+self-signed identity without either hand-rolling X.509 ASN.1 DER + ECDSA signing, or importing a
+PKCS#12 into the *keychain*.** Both touch the keychain/filesystem and are cryptographically
+unforgiving (one wrong DER length byte = a silently invalid cert), so they must be written **on a
+Mac where they can actually be run and validated** — writing them blind would leave code that
+looks done but may not connect. The Windows side interops only over `wss`, so a plain-ws macOS
+shortcut won't talk to it either. Everything *above* the transport (mesh, pairing, discovery,
+file channel, clipboard) is already cross-platform + tested and will light up the moment the
+macOS transport exists. A Mac session should, in order: (1) `ws_transport_mac.mm` — BSD sockets +
+SecureTransport, ephemeral self-signed identity via a temporary keychain, mirroring the validated
+OpenSSL/Schannel structure; (2) wire the tray connect/accept + auto-discovery in `tray_mac.mm`
+(a direct port of the done Windows tray); (3) `filepromise_mac.mm` (`NSFilePromiseProvider`).
+
 ### Step 4 — Input channel: TLS / wss (§5)
 
 - [x] **wss PROVEN end-to-end**: the POSIX WS transport does a real TLS handshake (OpenSSL,
@@ -59,7 +79,8 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
       cert via CryptoAPI, encryption-only). Compiles + links (secur32/crypt32); the WS handshake +
       frames ride over TLS. Runtime SSPI edge cases still want the two-Windows-machine loop to
       shake out — the `[tls]` lines in `%APPDATA%\Skittermouse\log.txt` are there for that.
-- [ ] macOS: TLS via Security.framework / Network.framework once the macOS transport lands.
+- [ ] macOS: TLS via Security.framework (SecureTransport) once the macOS transport lands — blocked
+      on the server-identity/keychain problem described in "macOS product" above; do it on a Mac.
 
 ### Step 9 — Peer mesh: macOS connection thread
 
@@ -115,10 +136,10 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
 ### Two Windows machines — pair, connect, forward input (Step 9, built)
 
 1. Install the same nightly on both PCs; both show the tray icon.
-2. Same LAN; allow Skittermouse through the firewall (TCP 47800 mesh + 47801 pairing, UDP 47802
-   discovery) when prompted.
-3. On BOTH PCs: tray → **Add device**. Each PC broadcasts its presence and shows a live list of the
-   other devices it finds (name + IP).
+2. Same LAN. The installer now **auto-adds the Windows Firewall rules** (TCP 47800-47803, UDP
+   47802); on a corp/domain PC where policy blocks that, allow Skittermouse manually.
+3. On BOTH PCs: tray → **Add device**. Each PC broadcasts its presence (now out **every** network
+   interface, so a VPN on one PC no longer hides it) and shows a live list of devices (name + IP).
 4. On ONE PC, select the other from the list → **Pair**. (The other PC just needs its Add-device
    window open; it accepts automatically.)
 5. Both show a **6-digit code** — confirm they MATCH and click Yes on both → toast "Paired with …".
@@ -144,6 +165,9 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
 
 - Install with "Run Skittermouse on startup" ticked → after reboot the tray reappears.
 - Default (unticked) → no autostart; enable later via tray "Run on startup" or Settings.
+- "Run Skittermouse" on the installer's finish page launches it immediately (elevated, from the
+   elevated installer). If a previous copy was running, the reinstall now stops it first and the
+   single-instance guard prevents two copies fighting over the ports.
 
 ### Lock-screen unlock (Step 14, open question)
 
