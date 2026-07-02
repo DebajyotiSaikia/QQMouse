@@ -45,14 +45,15 @@ re-check against [spec.md](spec.md) §16 — the native path exists for all of i
 
 ### Step 9 — Peer mesh: remaining
 
-- [ ] OS network thread (glue only): open a TCP/WS `connect()` to each paired peer and
-      `wsAcceptOne()` for inbound sockets, then hand each raw socket to `secureOutbound()` /
-      `InboundHandshake` and the sealed link to `ConnectionManager`. **This exact orchestration
-      is now proven** by the `tools/netcheck` harness (single-threaded connect/accept + secure
-      link + ConnectionManager pump) in the two-container rig; the remaining product step is to
-      run that loop on a background thread in the Windows tray (mutex around the mesh) and add a
-      dial `connect()` timeout so an offline peer doesn't stall the dialer. macOS also needs a
-      thread using the (now-written) POSIX transport.
+- [ ] Wire the (done, Docker-proven) `app/ConnectionService` into the Windows tray on a
+      background I/O thread: the thread dials/accepts + runs the secure link (blocking socket
+      work, lock-free), and hands each sealed link to the UI thread (which owns the mesh) via a
+      queue, so all `MeshNode`/`ConnectionManager` access stays single-threaded. Needs a dial
+      `connect()` timeout and **two-Windows-machine runtime validation** before shipping (the
+      threading can't be proven from one machine). `ConnectionService` itself (factory-injected
+      dial/accept -> secure_link -> ConnectionManager) is built, unit-tested, and validated
+      end-to-end over real TCP by the two-container rig (tests/docker/), which drives it through
+      `tools/netcheck`. macOS needs the same thread over the (now-written) POSIX transport.
 
 ### Step 10 — File transfer: OS delay-render (§9)
 
