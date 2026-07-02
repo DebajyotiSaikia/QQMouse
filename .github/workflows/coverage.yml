@@ -37,8 +37,8 @@ jobs:
           gcovr --root . --object-directory build \
             --filter 'src/' \
             --exclude 'src/platform/ws_transport_posix.cpp' \
-            --txt --output coverage.txt \
-            --xml-pretty --output coverage.xml
+            --txt=coverage.txt --xml-pretty=coverage.xml --print-summary
+          echo '----'
           cat coverage.txt
 
       - name: Job summary
