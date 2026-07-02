@@ -5,7 +5,7 @@ is not yet built** — as each item lands, delete it from here.
 
 ## Status
 
-- Native C++ only (product), **870 checks green**, Windows + macOS CI green at every commit.
+- Native C++ only (product), **878 checks green**, Windows + macOS CI green at every commit.
 - **The full app loop is validated headlessly in-process** by the mocked-systems e2e set
   (`tests/e2e_full_system_tests.cpp` + `tests/mock_systems.h`): every OS boundary is faked
   (MockInjector, MockClipboard, an in-process network Switchboard) so pairing → stored PSK →
@@ -30,8 +30,8 @@ is not yet built** — as each item lands, delete it from here.
   **native file copy/paste** (delay-render IDataObject → on-demand encrypted /files channel), and
   a **file debug log** (`%APPDATA%\Skittermouse\log.txt`); macOS has the Carbon hotkey + NSPanel
   picker. **Windows WS transport is now wss (Schannel TLS)**; POSIX WS transport for macOS/Linux.
-- Remaining items are **macOS-only** and share one hard blocker (see "macOS product" below);
-  the **Windows product is feature-complete**. Two field bugs were just fixed + CI-green:
+- Remaining items are **macOS-only** (see the **macOS** section below); the **Windows product is
+  feature-complete**. Two field bugs were just fixed + CI-green:
   (1) one-way discovery when a **VPN** is up — the beacon now sends to every interface's directed
   broadcast, so the LAN NIC is always covered regardless of the default route; (2) the installer
   now opens the app's firewall ports, stops a running instance before reinstall, and the app has a
@@ -50,94 +50,46 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
 
 ---
 
-## By build order (spec §17)
+## Remaining — cross-platform / Windows
 
-### macOS product — what's landed and what's left
+### Lock-screen unlock — runtime open question (§14)
 
-**Landed (compiles on macOS CI):** `ws_transport_mac.mm` — a native BSD-socket + SecureTransport
-`wss` transport mirroring the validated OpenSSL/Schannel structure. Its hardest piece, minting the
-ephemeral self-signed server identity, rests on `crypto/x509_selfsigned` — a pure-logic DER cert
-builder that is **unit-tested and byte-verified on Windows** (CryptoAPI parses AND self-verifies
-its output), so the certificate bytes SecureTransport consumes are known-correct. The runtime path
-around it (SecKeyCreateRandomKey / temporary keychain / SecIdentityCreateWithCertificate /
-SSLHandshake) compiles but needs a real Mac to validate — same footing as the Schannel backend.
-
-**Left (needs a Mac to write against the live Cocoa/keychain runtime):** two mechanical ports that
-wire the (done, tested) cross-platform core — they carry real risk only in the AppKit glue, which
-is untestable without the hardware:
-- Tray networking in `tray_mac.mm`: the background connect/accept -> secure-link -> mesh I/O
-  thread, the NSTimer mesh pump, auto-discovery + the `NSAlert` pairing confirm — a direct port of
-  the done Windows tray (`ConnectionManager` / `MeshNode` / `secure_link` / `PairingExchange` /
-  discovery are all cross-platform + unit-tested + Docker-proven; only the Cocoa threading/UI glue
-  is new).
-- `filepromise_mac.mm` (`NSFilePromiseProvider`) — the mesh announce, `/files` secure channel and
-  `net/FileChannel` are cross-platform + done; only the macOS OS-provider glue remains.
-
-### Step 4 — Input channel: TLS / wss (§5)
-
-- [x] **wss PROVEN end-to-end**: the POSIX WS transport does a real TLS handshake (OpenSSL,
-      ephemeral self-signed cert, encryption-only — the PSK secure link stays the trust gate), and
-      the two-container Docker rig now runs the FULL stack (pairing + encrypted input + file
-      transfer) over TLS, all PASS. (TCP → TLS → WebSocket → app-layer AES-256-GCM.)
-- [x] `platform/ws_transport_win.cpp` — **Schannel** TLS: the Windows product is now wss too
-      (SSPI handshake loop, EncryptMessage/DecryptMessage stream I/O, ephemeral self-signed server
-      cert via CryptoAPI, encryption-only). Compiles + links (secur32/crypt32); the WS handshake +
-      frames ride over TLS. Runtime SSPI edge cases still want the two-Windows-machine loop to
-      shake out — the `[tls]` lines in `%APPDATA%\Skittermouse\log.txt` are there for that.
-- [~] macOS: TLS via Security.framework (SecureTransport) — `ws_transport_mac.mm` **landed and
-      compiles on CI**; the self-signed identity uses the CryptoAPI-verified `crypto/x509_selfsigned`
-      builder. Needs a Mac to validate the SecureTransport/keychain runtime (see "macOS product").
-
-### Step 9 — Peer mesh: macOS connection thread
-
-- [ ] macOS tray: run the same background connect/accept -> secure-link -> mesh I/O thread over
-      the (written) POSIX transport, plus an "Add device" pairing flow. The **Windows tray is
-      done**: a background I/O thread dials paired peers (bounded connect timeout) + accepts
-      inbound on port 47800, runs the secure link off the UI thread, and hands sealed links to
-      the UI thread (mesh stays single-threaded); **"Add device" is auto-discovery** — a LAN
-      presence beacon (broadcast + listen on UDP 47802) feeds a live picker where the user selects
-      the target by name + IP (no manual IP typing), then the ECDH numeric-comparison
-      (`PairingExchange` + confirm dialog, port 47801) stores the PSK in an encrypted-at-rest
-      keystore. Runtime check is in Manual validation below.
-
-### Step 10 — File transfer: OS delay-render (§9)
-
-- [x] **Windows file transfer DONE (code-complete, Explorer-gated for runtime)**: a native
-      delay-render `IDataObject` advertises `CFSTR_FILEDESCRIPTORW` + promised `CFSTR_FILECONTENTS`,
-      each backed by a read-only `IStream` that pulls bytes through an injected byte source only
-      on paste (`filepromise_win.cpp`, unit-tested headlessly incl. the mid-stream error path).
-      Wired into the tray: copying files (CF_HDROP) broadcasts a `FilePromiseAnnounce` over the
-      mesh + remembers the paths; the destination puts a matching promise on its clipboard whose
-      byte source dials the source's on-demand `/files` channel (secure link, port 47803) and
-      drives the (done) `net/FileChannel` — so a paste in Explorer materialises the files with its
-      OWN native copy-progress + error UI. Multi-file; no staging temp. Needs two Windows machines + Explorer to validate the last mile.
-- [ ] `platform/filepromise_mac.mm` — `NSFilePromiseProvider`; native Finder progress (§9.2).
-      (The mesh announce, the `/files` secure channel, and `net/FileChannel` are cross-platform and
-      done; only the macOS OS-provider glue remains, and it needs a Mac + Finder.)
-
-### Step 11 — Lock/unlock finish (§14)
-
-- [ ] Unlock = switch-then-type only; **verify Secure Desktop / `LogonUI` behavior on a real
-      locked machine** (open question). (lock_win/lock_mac, autostart_win/mac: done. WoL
-      **"Waking…" flow** — bounded-timeout state machine (`core/WakeFlow`, unit-tested) + magic
-      packet + guided-fallback toast, wired into the tray on switch-to-unreachable with a
-      per-device MAC (config round-tripped): done.)
-
-### Step 12 — Failure & edge-state UI (§15)
-
-- [x] File-transfer mid-stream failure surfaced via native `IStream` error (Windows): the promised
-      stream returns `STG_E_READFAULT` when the byte source fails, so Explorer shows its own error
-      UI (unit-tested). (macOS equivalent lands with `filepromise_mac.mm`.)
-      (heartbeat fail-safe, discovery staleness, simultaneous-claim resolution, codec version
-      gate, one-time connection-dropped/return toast, switch-to-unreachable "unavailable" flash,
-      **protocol-version-mismatch "update Skittermouse on <machine>" toast** (throttled per peer,
-      e2e-tested) — all via MeshNode callbacks wired into the Windows tray: done.)
+- Unlock is switch-then-type only (no scripted credentials). **Verify on a real locked Windows
+  machine** whether `SendInput`-forwarded keystrokes cross the Secure Desktop / `LogonUI`
+  boundary; if they don't, unlock needs physical presence at that machine (an OS limitation, not a
+  bug). `lock_win` / `lock_mac`, autostart, and the WoL "Waking…" flow are all done.
 
 ---
 
-## Manual validation (needs real hardware — the code is built + CI-green, but these paths can't
+## macOS — needs a Mac to write + validate against the live Cocoa/keychain runtime
 
-## be runtime-tested from the dev box; validate on your machines)
+Everything _above_ the transport (mesh, pairing, discovery, file channel, clipboard, WoL,
+election) is cross-platform and already unit-tested + Docker-proven; only the macOS OS-glue below
+remains. The Windows side interops only over `wss`, so all of this must speak TLS.
+
+**Landed (compiles on macOS CI):** `platform/ws_transport_mac.mm` — a native BSD-socket +
+SecureTransport `wss` transport mirroring the validated OpenSSL/Schannel structure. Its hardest
+piece, minting the ephemeral self-signed server identity, rests on `crypto/x509_selfsigned` — a
+pure-logic DER cert builder **unit-tested and byte-verified on Windows** (CryptoAPI parses AND
+self-verifies its output), so the cert bytes SecureTransport consumes are known-correct.
+
+- [~] `platform/ws_transport_mac.mm` — validate the SecureTransport/keychain runtime path
+  (SecKeyCreateRandomKey / temporary keychain / SecIdentityCreateWithCertificate / SSLHandshake)
+  on a real Mac. Compiles on CI; same footing Schannel had before its two-machine run.
+- [ ] Tray networking in `platform/tray_mac.mm`: background connect/accept → secure-link → mesh
+      I/O thread, the NSTimer mesh pump, auto-discovery + the `NSAlert` pairing confirm — a direct
+      port of the done Windows tray. `ConnectionManager` / `MeshNode` / `secure_link` /
+      `PairingExchange` / discovery are all cross-platform + tested; only the Cocoa threading/UI
+      glue is new.
+- [ ] `platform/filepromise_mac.mm` (`NSFilePromiseProvider`) — native Finder progress (§9.2). The
+      mesh announce, the `/files` secure channel, and `net/FileChannel` are cross-platform + done;
+      only the macOS OS-provider glue remains.
+
+---
+
+## Manual validation
+
+The code is built + CI-green, but these paths need real hardware — validate on your machines.
 
 ### Two Windows machines — pair, connect, forward input (Step 9, built)
 
@@ -172,8 +124,8 @@ is untestable without the hardware:
 - Install with "Run Skittermouse on startup" ticked → after reboot the tray reappears.
 - Default (unticked) → no autostart; enable later via tray "Run on startup" or Settings.
 - "Run Skittermouse" on the installer's finish page launches it immediately (elevated, from the
-   elevated installer). If a previous copy was running, the reinstall now stops it first and the
-   single-instance guard prevents two copies fighting over the ports.
+  elevated installer). If a previous copy was running, the reinstall now stops it first and the
+  single-instance guard prevents two copies fighting over the ports.
 
 ### Lock-screen unlock (Step 14, open question)
 
