@@ -10,7 +10,9 @@ add_executable(skittermouse_tests
     session_token_tests.cpp
     net_tests.cpp
     input_logic_tests.cpp
+    app_logic_tests.cpp
     e2e_mesh_tests.cpp
+    e2e_flow_tests.cpp
 )
 target_link_libraries(skittermouse_tests PRIVATE skittermouse_platform)
 

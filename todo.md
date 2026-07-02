@@ -134,8 +134,8 @@ re-check against [spec.md](spec.md) §16 — the native path exists for all of i
 ## Tests — 100% coverage (all steps)
 
 - [~] Unit tests for every pure-logic module landed so far (**438 checks**, native harness):
-      core logic, crypto (KAT + OpenSSL cross-check), pairing, session token, WS framing,
-      message codec, WoL, beacon, config, key_translation. Extend to 100% as new modules land.
+  core logic, crypto (KAT + OpenSSL cross-check), pairing, session token, WS framing,
+  message codec, WoL, beacon, config, key_translation. Extend to 100% as new modules land.
 - [ ] **Comprehensive e2e automation covering 100% of scenarios** — extend the mesh simulator
       to a full flow: pairing → connect → switch (all triggers) → clipboard sync → file
       transfer → coordinator failover/failback → owner-drop fail-safe → protocol-mismatch

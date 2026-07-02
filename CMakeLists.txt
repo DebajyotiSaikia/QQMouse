@@ -22,6 +22,8 @@ add_library(skittermouse_core STATIC
     src/core/key_translation.cpp
     src/core/input_tracker.cpp
     src/core/clipboard_sync.cpp
+    src/core/heartbeat.cpp
+    src/core/input_pipeline.cpp
     src/net/message_codec.cpp
 )
 target_include_directories(skittermouse_core PUBLIC src)
