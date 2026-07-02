@@ -77,7 +77,7 @@ elseif(APPLE)
         src/platform/lock_mac.mm          # Section 14: CGSession suspend
         src/platform/clipboard_mac.mm     # Section 8: NSPasteboard
         src/platform/autostart_mac.mm     # Section 13: LaunchAgent plist
-        # src/platform/crypto_mac.mm      # Sections 5.4/7: CommonCrypto + Security.framework
+        src/platform/crypto_mac.mm        # Sections 5.4/7: CommonCrypto + Security.framework
     )
 endif()
 
