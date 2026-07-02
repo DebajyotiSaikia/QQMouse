@@ -38,16 +38,21 @@ re-check against [spec.md](spec.md) §16 — the native path exists for all of i
 - [ ] Milestone: two real machines forwarding encrypted input end-to-end. (transport interface,
       WS handshake/framing/assembler, **client + server** transport, message codec, the
       **AES-256-GCM per-message `Transport` decorator** (strict nonce counter + anti-replay,
-      3-node e2e through it), MeshNode routing wired into the tray, 3-node loopback e2e: done.)
+      3-node e2e through it), the **secure link handshake** (PSK selection + sealing + crypto
+      identity, e2e-tested), MeshNode routing wired into the tray, 3-node loopback e2e: done.)
 
 ### Step 9 — Peer mesh: remaining
 
-- [ ] OS network thread: run the WS client `connect()` to each paired peer and
-      `wsAcceptOne()` for inbound sockets, handing each Transport to the (done, tested)
-      `app/ConnectionManager`. (peer-hello handshake, link identification/lifecycle, dedup,
-      disconnect reaping, mesh registration + pump via `ConnectionManager`; config layout,
-      N-peer ownership broadcast, race resolution, coordinator election/failover/failback,
-      priority list, MeshNode wired into the tray app: done.)
+- [ ] OS network thread (glue only): open a TCP/WS `connect()` to each paired peer and
+      `wsAcceptOne()` for inbound sockets, then hand each raw socket to `secureOutbound()` /
+      `InboundHandshake` and the sealed link to `ConnectionManager`. (**Secure link
+      establishment** — clear id-hint → per-device PSK selection from the KeyStore → AES-GCM
+      sealing, with identity proven cryptographically and wrong-PSK/not-paired/imposter
+      rejection — is done and e2e-tested through a full mesh switch. peer-hello handshake, link
+      identification/lifecycle, dedup, disconnect reaping, mesh registration + pump via
+      `ConnectionManager`; N-peer ownership broadcast, race resolution, coordinator election/
+      failover/failback, priority list, MeshNode wired into the tray: done. Only the raw socket
+      calls + the thread loop/mutex remain — untestable without two machines.)
 
 ### Step 10 — File transfer: OS delay-render (§9)
 

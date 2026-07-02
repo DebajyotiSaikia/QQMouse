@@ -15,6 +15,7 @@ add_executable(skittermouse_tests
     input_logic_tests.cpp
     app_logic_tests.cpp
     connection_manager_tests.cpp
+    secure_link_tests.cpp
     feature_tests.cpp
     file_session_tests.cpp
     file_channel_tests.cpp

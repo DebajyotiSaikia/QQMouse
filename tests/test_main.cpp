@@ -15,6 +15,7 @@ void run_encrypted_transport_tests();
 void run_input_logic_tests();
 void run_app_logic_tests();
 void run_connection_manager_tests();
+void run_secure_link_tests();
 void run_feature_tests();
 void run_file_session_tests();
 void run_file_channel_tests();
@@ -40,6 +41,7 @@ int main() {
     run_input_logic_tests();
     run_app_logic_tests();
     run_connection_manager_tests();
+    run_secure_link_tests();
     run_feature_tests();
     run_file_session_tests();
     run_file_channel_tests();

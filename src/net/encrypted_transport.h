@@ -23,6 +23,8 @@
 
 #include <array>
 #include <cstring>
+#include <memory>
+#include <string>
 #include <vector>
 
 namespace sm::net {
@@ -43,6 +45,15 @@ public:
           key_(key),
           sendRole_(static_cast<uint8_t>(role)),
           recvRole_(role == Role::Initiator ? uint8_t{1} : uint8_t{0}) {}
+
+    // Owning: takes ownership of `inner`, so a sealed link can carry its own socket
+    // (the mesh then holds a single object). Delegates to the non-owning ctor.
+    EncryptedTransport(std::unique_ptr<Transport> inner,
+                       const std::array<uint8_t, crypto::kAesKeyLen>& key,
+                       Role role)
+        : EncryptedTransport(inner.get(), key, role) {
+        owned_ = std::move(inner);
+    }
 
     bool connect(const std::string& host, uint16_t port) override {
         return inner_ && inner_->connect(host, port);
@@ -122,6 +133,7 @@ private:
     }
 
     Transport* inner_;
+    std::unique_ptr<Transport> owned_; // non-null only when this decorator owns inner_
     std::array<uint8_t, crypto::kAesKeyLen> key_;
     uint8_t sendRole_;
     uint8_t recvRole_;
@@ -131,5 +143,14 @@ private:
     std::vector<uint8_t> frame_;
     std::vector<uint8_t> scratch_;
 };
+
+// Deterministic per-link role so the two ends agree without negotiation: the peer
+// with the lexicographically smaller id is the Initiator (nonce role 0), the other
+// the Responder. Guarantees the two directions never share a nonce under one PSK.
+inline EncryptedTransport::Role linkRoleFor(const std::string& self,
+                                            const std::string& peer) {
+    return self < peer ? EncryptedTransport::Role::Initiator
+                       : EncryptedTransport::Role::Responder;
+}
 
 } // namespace sm::net

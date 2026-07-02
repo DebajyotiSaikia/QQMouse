@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <deque>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -308,5 +309,28 @@ void run_encrypted_transport_tests() {
         int n = b.recv(buf.data(), buf.size());
         SM_CHECK_EQ(static_cast<int>(big.size()), n);
         SM_CHECK(std::memcmp(buf.data(), big.data(), big.size()) == 0);
+    }
+
+    // --- Owning constructor: the decorator keeps its inner transport alive -----
+    {
+        auto qab = std::make_shared<std::deque<std::vector<uint8_t>>>();
+        auto qba = std::make_shared<std::deque<std::vector<uint8_t>>>();
+        auto ownedA = std::make_unique<WireTap>();
+        ownedA->out = qab.get();
+        ownedA->in = qba.get();
+        auto ownedB = std::make_unique<WireTap>();
+        ownedB->out = qba.get();
+        ownedB->in = qab.get();
+
+        // Move the inner transports in; `a`/`b` now own them.
+        EncryptedTransport a(std::move(ownedA), key, Role::Initiator);
+        EncryptedTransport b(std::move(ownedB), key, Role::Responder);
+
+        auto msg = bytesOf("owned round trip");
+        SM_CHECK(a.send(msg.data(), msg.size()));
+        uint8_t buf[128];
+        int n = b.recv(buf, sizeof(buf));
+        SM_CHECK_EQ(static_cast<int>(msg.size()), n);
+        SM_CHECK(std::memcmp(buf, msg.data(), msg.size()) == 0);
     }
 }

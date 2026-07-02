@@ -52,6 +52,7 @@ set(SM_PLATFORM_SOURCES
     src/pairing/verification_code.cpp
     src/pairing/ecdh_handshake.cpp
     src/pairing/key_store.cpp
+    src/app/secure_link.cpp
     src/net/session_token.cpp
     src/net/ws_frame.cpp
     src/net/ws_handshake.cpp
