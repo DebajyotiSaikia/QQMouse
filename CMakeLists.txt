@@ -67,6 +67,7 @@ if(WIN32)
         src/platform/clipboard_win.cpp    # Section 8: CF_UNICODETEXT + exclusion check
         src/platform/autostart_win.cpp    # Section 13: Task Scheduler, elevated
         src/platform/tray_win.cpp         # Section 10: Shell_NotifyIcon tray app shell
+        src/ui/picker_window_win.cpp      # Section 4.2: hotkey-triggered machine picker
         src/platform/wol_diag_win.cpp     # Section 12: powercfg WoL self-diagnosis
         src/pairing/pairing_dialog_win.cpp # Section 7.1: numeric-comparison confirm dialog
         # ... added as sections land

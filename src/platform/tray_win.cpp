@@ -15,6 +15,7 @@
 #include "platform/clipboard.h"
 #include "platform/injector.h"
 #include "ui/menu_model.h"
+#include "ui/picker_window.h"
 
 #include <windows.h>
 #include <shellapi.h>
@@ -112,7 +113,15 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
         }
 
         case WM_HOTKEY:
-            // The picker window (spec 4.2) opens here once built.
+            if (g_app->mesh) {
+                std::vector<sm::core::PeerId> online;
+                for (const auto& d : g_app->config.devices)
+                    if (g_app->mesh->isPeerOnline(d.id)) online.push_back(d.id);
+                auto items = sm::ui::buildMachineMenu(g_app->config.devices, g_app->self,
+                                                      g_app->mesh->owner(), online);
+                std::string sel = sm::ui::showPicker(items);
+                if (!sel.empty()) g_app->mesh->requestSwitchTo(sel);
+            }
             return 0;
 
         case WM_TIMER: {
