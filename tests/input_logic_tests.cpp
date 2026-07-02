@@ -137,5 +137,13 @@ void run_input_logic_tests() {
         uint8_t badType[2] = {kProtocolVersion, 200};
         SM_CHECK(sm::net::decodeMessage(badType, 2, out, consumed) ==
                  sm::net::DecodeResult::Malformed);
+
+        // Hostile/implausible variable-length header: payload_length = 0xFFFFFFFF must
+        // be rejected as Malformed (not trusted into a size_t add or a huge alloc).
+        uint8_t hugeLen[6] = {kProtocolVersion,
+                              static_cast<uint8_t>(MessageType::ClipboardUpdate),
+                              0xFF, 0xFF, 0xFF, 0xFF};
+        SM_CHECK(sm::net::decodeMessage(hugeLen, sizeof(hugeLen), out, consumed) ==
+                 sm::net::DecodeResult::Malformed);
     }
 }

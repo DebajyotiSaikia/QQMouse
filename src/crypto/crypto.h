@@ -29,6 +29,14 @@ inline constexpr size_t kGcmTagLen = 16;   // 128-bit GCM tag
 inline constexpr size_t kEcPointLen = 64;  // P-256 X||Y, big-endian
 inline constexpr size_t kSharedLen = 32;   // P-256 shared X, big-endian
 
+// Wipe sensitive bytes so decrypted keys/PSKs don't linger in freed memory. The
+// volatile writes are not elided by the optimizer (unlike a plain memset that the
+// compiler may drop when the buffer is about to die). Portable, header-only.
+inline void secureZero(void* p, size_t n) {
+    volatile uint8_t* v = static_cast<volatile uint8_t*>(p);
+    while (n--) *v++ = 0;
+}
+
 // --- Randomness --------------------------------------------------------------
 bool randomBytes(uint8_t* buf, size_t len);
 Bytes randomBytes(size_t len);

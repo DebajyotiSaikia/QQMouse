@@ -26,7 +26,16 @@ bool isFixedType(MessageType t) {
     }
 }
 
-bool isKnownType(uint8_t t) { return (t >= 1 && t <= 9) || t == 11; }
+bool isKnownType(uint8_t t) {
+    // Types 1-9 and 11 are decoded here; 10 (PeerHello) is handled by the secure-link
+    // layer before the mesh codec ever sees it, so it is intentionally not accepted.
+    return (t >= 1 && t <= 9) || t == 11;
+}
+
+// Upper bound on a variable-length payload. The real messages are tiny (input,
+// clipboard text, 64 KB file chunks, pairing points); anything larger is a malformed
+// or malicious header and is rejected before we trust the length or allocate for it.
+constexpr uint32_t kMaxVarPayload = 64u * 1024 * 1024;
 
 } // namespace
 
@@ -70,7 +79,10 @@ DecodeResult decodeMessage(const uint8_t* data, std::size_t len,
     if (len < sizeof(VarHeader)) return DecodeResult::NeedMore;
     VarHeader h;
     std::memcpy(&h, data, sizeof(VarHeader));
-    std::size_t total = sizeof(VarHeader) + h.payload_length;
+    // Reject an implausible/hostile length before it can overflow the size_t add or
+    // drive a huge allocation (spec 15: a malformed message rejects cleanly).
+    if (h.payload_length > kMaxVarPayload) return DecodeResult::Malformed;
+    std::size_t total = sizeof(VarHeader) + static_cast<std::size_t>(h.payload_length);
     if (len < total) return DecodeResult::NeedMore;
 
     out.isFixed = false;

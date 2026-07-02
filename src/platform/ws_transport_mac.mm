@@ -97,6 +97,8 @@ SecIdentityRef ephemeralServerIdentity() {
     if (!priv) {
         mlog("SecKeyCreateRandomKey failed");
         if (err) CFRelease(err);
+        SecKeychainDelete(keychain);
+        CFRelease(keychain);
         return nullptr;
     }
     SecKeyRef pub = SecKeyCopyPublicKey(priv);
@@ -105,6 +107,8 @@ SecIdentityRef ephemeralServerIdentity() {
         mlog("public key export failed");
         if (pub) CFRelease(pub);
         CFRelease(priv);
+        SecKeychainDelete(keychain);
+        CFRelease(keychain);
         return nullptr;
     }
     sm::crypto::Bytes point(CFDataGetBytePtr(pointRef),
@@ -134,6 +138,8 @@ SecIdentityRef ephemeralServerIdentity() {
     if (der.empty()) {
         mlog("cert DER build failed");
         CFRelease(priv);
+        SecKeychainDelete(keychain);
+        CFRelease(keychain);
         return nullptr;
     }
 
@@ -143,6 +149,8 @@ SecIdentityRef ephemeralServerIdentity() {
     if (!cert) {
         mlog("SecCertificateCreateWithData failed");
         CFRelease(priv);
+        SecKeychainDelete(keychain);
+        CFRelease(keychain);
         return nullptr;
     }
 
@@ -161,8 +169,12 @@ SecIdentityRef ephemeralServerIdentity() {
     CFRelease(priv);
     if (!identity) {
         mlog("SecIdentityCreateWithCertificate failed");
+        SecKeychainDelete(keychain);
+        CFRelease(keychain);
         return nullptr;
     }
+    // Success: the identity references this keychain, so it is retained for the
+    // process lifetime (freed by the OS at exit) alongside the cached identity.
     mlog("ephemeral server identity ready");
     cached = identity;
     return cached;
@@ -261,16 +273,30 @@ public:
 
         std::string key = wsGenerateClientKey();
         std::string req = wsBuildClientHandshake(host + ":" + portStr, "/input", key);
-        if (!rawSendAll(reinterpret_cast<const uint8_t*>(req.data()), req.size())) return false;
+        // Past this point ssl_ + sock_ are live; close() (idempotent) frees both on any
+        // WS-handshake failure so a rejected upgrade never leaks the TLS context.
+        if (!rawSendAll(reinterpret_cast<const uint8_t*>(req.data()), req.size())) {
+            close();
+            return false;
+        }
         std::string resp;
         char c;
         while (resp.find("\r\n\r\n") == std::string::npos) {
             long n = rawRecv(&c, 1);
-            if (n <= 0) return false;
+            if (n <= 0) {
+                close();
+                return false;
+            }
             resp += c;
-            if (resp.size() > 8192) return false;
+            if (resp.size() > 8192) {
+                close();
+                return false;
+            }
         }
-        if (resp.find(wsAcceptKey(key)) == std::string::npos) return false;
+        if (resp.find(wsAcceptKey(key)) == std::string::npos) {
+            close();
+            return false;
+        }
         setNonBlocking(sock_);
         connected_ = true;
         return true;

@@ -25,6 +25,15 @@ uint32_t getU32(const uint8_t* p) {
            (static_cast<uint32_t>(p[2]) << 8) | static_cast<uint32_t>(p[3]);
 }
 
+// Wipes a buffer holding cleartext key material on scope exit (every return path),
+// so decrypted PSKs never linger in freed heap memory.
+struct ScopedWipe {
+    sm::crypto::Bytes& b;
+    ~ScopedWipe() {
+        if (!b.empty()) sm::crypto::secureZero(b.data(), b.size());
+    }
+};
+
 } // namespace
 
 void KeyStore::setPsk(const sm::core::PeerId& id, const Psk& psk) { psks_[id] = psk; }
@@ -46,6 +55,7 @@ std::vector<sm::core::PeerId> KeyStore::devices() const {
 sm::crypto::Bytes KeyStore::serializeEncrypted(const uint8_t* protectionKey32) const {
     // Plaintext: [count:4] then per entry [idlen:2][id][psk:32].
     sm::crypto::Bytes plain;
+    ScopedWipe wipe{plain}; // cleartext PSKs wiped when this returns
     putU32(plain, static_cast<uint32_t>(psks_.size()));
     for (const auto& kv : psks_) {
         putU16(plain, static_cast<uint16_t>(kv.first.size()));
@@ -80,6 +90,7 @@ bool KeyStore::loadEncrypted(const sm::crypto::Bytes& blob, const uint8_t* prote
     std::size_t ctLen = blob.size() - hdr;
 
     sm::crypto::Bytes plain(ctLen);
+    ScopedWipe wipe{plain}; // cleartext PSKs wiped on every return below
     if (!sm::crypto::aesGcmDecrypt(protectionKey32, nonce, sm::crypto::kGcmNonceLen,
                                    nullptr, 0, ct, ctLen, tag, plain.data())) {
         return false; // wrong key or tampered -- store unchanged
