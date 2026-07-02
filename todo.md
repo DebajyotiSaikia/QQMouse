@@ -67,11 +67,12 @@ re-check against [spec.md](spec.md) §16 — the native path exists for all of i
 
 ### Step 12 — Failure & edge-state UI (§15)
 
-- [ ] File-transfer mid-stream failure surfaced via native `IStream`/promise error.
-- [ ] Surface protocol-version mismatch ("update Skittermouse on <machine>") in the UI.
+- [ ] File-transfer mid-stream failure surfaced via native `IStream`/promise error
+      (lands with the file-promise work in Step 10).
       (heartbeat fail-safe, discovery staleness, simultaneous-claim resolution, codec version
-      gate, **one-time connection-dropped/return toast + switch-to-unreachable "unavailable"
-      flash** via MeshNode transition callbacks (e2e-tested) wired into the Windows tray: done.)
+      gate, one-time connection-dropped/return toast, switch-to-unreachable "unavailable" flash,
+      **protocol-version-mismatch "update Skittermouse on <machine>" toast** (throttled per peer,
+      e2e-tested) — all via MeshNode callbacks wired into the Windows tray: done.)
 
 ---
 

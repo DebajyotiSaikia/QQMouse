@@ -206,6 +206,10 @@ int runTrayApp() {
     app.mesh->onSwitchUnavailable = [](const sm::core::PeerId& id) {
         showToast(L"Skittermouse", toWide(id) + L" is unavailable");
     };
+    // Protocol-version mismatch (spec 15): tell the user which machine to update.
+    app.mesh->onVersionMismatch = [](const sm::core::PeerId& id) {
+        showToast(L"Skittermouse", L"Update Skittermouse on " + toWide(id));
+    };
 
     HINSTANCE hInst = GetModuleHandleW(nullptr);
     WNDCLASSW wc{};

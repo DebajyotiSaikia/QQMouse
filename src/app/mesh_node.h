@@ -11,6 +11,7 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,9 @@ public:
     // Fired when a switch is requested to a peer that is currently unreachable; the
     // switch is a no-op (spec 15: never a hang), and the UI can flash "unavailable".
     std::function<void(const sm::core::PeerId&)> onSwitchUnavailable;
+    // Fired once per peer when it sends a message with a mismatched protocol version
+    // (spec 15: "update Skittermouse on <machine>", never a silent misparse).
+    std::function<void(const sm::core::PeerId&)> onVersionMismatch;
 
     uint64_t heartbeatTimeoutMs = 2000;
     uint64_t heartbeatIntervalMs = 500;
@@ -84,6 +88,7 @@ private:
     sm::core::PeerId self_;
     std::map<sm::core::PeerId, sm::net::Transport*> peers_;
     std::map<sm::core::PeerId, bool> peerOnline_; // last-known liveness, for transitions
+    std::set<sm::core::PeerId> versionWarned_;    // peers already flagged as mismatched
     sm::core::OwnershipState ownership_;
     sm::core::ServerElection election_;
     sm::core::Heartbeat heartbeat_;

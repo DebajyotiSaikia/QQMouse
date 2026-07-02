@@ -35,6 +35,7 @@ void MeshNode::removePeer(const PeerId& id) {
         peerOnline_.erase(it);
         if (wasOnline && onPeerOffline) onPeerOffline(id);
     }
+    versionWarned_.erase(id); // a fresh connection may warn again if still mismatched
     refreshOnlineAndFailSafe(now_);
 }
 
@@ -123,7 +124,12 @@ void MeshNode::handle(const PeerId& from, const uint8_t* data, std::size_t len, 
     sm::net::DecodedMessage m;
     std::size_t consumed = 0;
     auto r = sm::net::decodeMessage(data, len, m, consumed);
-    if (r != sm::net::DecodeResult::Ok) return; // version mismatch / malformed -> drop
+    if (r == sm::net::DecodeResult::VersionMismatch) {
+        // Surface once per peer so the user updates the other machine (spec 15).
+        if (versionWarned_.insert(from).second && onVersionMismatch) onVersionMismatch(from);
+        return;
+    }
+    if (r != sm::net::DecodeResult::Ok) return; // malformed / incomplete -> drop
 
     if (m.isFixed) {
         switch (m.type) {

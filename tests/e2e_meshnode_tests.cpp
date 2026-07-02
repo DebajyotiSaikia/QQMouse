@@ -158,4 +158,32 @@ void run_e2e_meshnode_tests() {
         SM_CHECK_EQ(unavailTarget, std::string("Y"));
         SM_CHECK(X.isLocalOwner()); // ownership never handed to a dead peer
     }
+
+    // --- Protocol-version mismatch surfaced once per peer (spec 15) -----------
+    {
+        smtest::LoopbackPair P;
+        app::MeshNode N("N");
+        N.addPeer("Z", &P.a); // N reads P.a; the "peer" writes via P.b
+
+        int warns = 0;
+        core::PeerId who;
+        N.onVersionMismatch = [&](const core::PeerId& id) {
+            ++warns;
+            who = id;
+        };
+
+        // A 12-byte fixed message carrying a bad protocol_version byte.
+        uint8_t bad[12] = {};
+        bad[0] = 99; // wrong version
+        bad[1] = 1;  // MouseMove
+        P.b.send(bad, sizeof(bad));
+        N.poll(100);
+        SM_CHECK_EQ(warns, 1);
+        SM_CHECK_EQ(who, std::string("Z"));
+
+        // A second mismatched message does NOT re-warn (throttled per peer).
+        P.b.send(bad, sizeof(bad));
+        N.poll(101);
+        SM_CHECK_EQ(warns, 1);
+    }
 }
