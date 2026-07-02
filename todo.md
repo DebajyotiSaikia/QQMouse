@@ -52,21 +52,26 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
 
 ## By build order (spec §17)
 
-### macOS product — the one blocker behind every remaining item
+### macOS product — what's landed and what's left
 
-All unchecked items below are macOS. They are gated on a single hard problem: **SecureTransport
-(the native TLS API) requires a server *certificate identity*, and macOS has no API to mint a
-self-signed identity without either hand-rolling X.509 ASN.1 DER + ECDSA signing, or importing a
-PKCS#12 into the *keychain*.** Both touch the keychain/filesystem and are cryptographically
-unforgiving (one wrong DER length byte = a silently invalid cert), so they must be written **on a
-Mac where they can actually be run and validated** — writing them blind would leave code that
-looks done but may not connect. The Windows side interops only over `wss`, so a plain-ws macOS
-shortcut won't talk to it either. Everything *above* the transport (mesh, pairing, discovery,
-file channel, clipboard) is already cross-platform + tested and will light up the moment the
-macOS transport exists. A Mac session should, in order: (1) `ws_transport_mac.mm` — BSD sockets +
-SecureTransport, ephemeral self-signed identity via a temporary keychain, mirroring the validated
-OpenSSL/Schannel structure; (2) wire the tray connect/accept + auto-discovery in `tray_mac.mm`
-(a direct port of the done Windows tray); (3) `filepromise_mac.mm` (`NSFilePromiseProvider`).
+**Landed (compiles on macOS CI):** `ws_transport_mac.mm` — a native BSD-socket + SecureTransport
+`wss` transport mirroring the validated OpenSSL/Schannel structure. Its hardest piece, minting the
+ephemeral self-signed server identity, rests on `crypto/x509_selfsigned` — a pure-logic DER cert
+builder that is **unit-tested and byte-verified on Windows** (CryptoAPI parses AND self-verifies
+its output), so the certificate bytes SecureTransport consumes are known-correct. The runtime path
+around it (SecKeyCreateRandomKey / temporary keychain / SecIdentityCreateWithCertificate /
+SSLHandshake) compiles but needs a real Mac to validate — same footing as the Schannel backend.
+
+**Left (needs a Mac to write against the live Cocoa/keychain runtime):** two mechanical ports that
+wire the (done, tested) cross-platform core — they carry real risk only in the AppKit glue, which
+is untestable without the hardware:
+- Tray networking in `tray_mac.mm`: the background connect/accept -> secure-link -> mesh I/O
+  thread, the NSTimer mesh pump, auto-discovery + the `NSAlert` pairing confirm — a direct port of
+  the done Windows tray (`ConnectionManager` / `MeshNode` / `secure_link` / `PairingExchange` /
+  discovery are all cross-platform + unit-tested + Docker-proven; only the Cocoa threading/UI glue
+  is new).
+- `filepromise_mac.mm` (`NSFilePromiseProvider`) — the mesh announce, `/files` secure channel and
+  `net/FileChannel` are cross-platform + done; only the macOS OS-provider glue remains.
 
 ### Step 4 — Input channel: TLS / wss (§5)
 
@@ -79,8 +84,9 @@ OpenSSL/Schannel structure; (2) wire the tray connect/accept + auto-discovery in
       cert via CryptoAPI, encryption-only). Compiles + links (secur32/crypt32); the WS handshake +
       frames ride over TLS. Runtime SSPI edge cases still want the two-Windows-machine loop to
       shake out — the `[tls]` lines in `%APPDATA%\Skittermouse\log.txt` are there for that.
-- [ ] macOS: TLS via Security.framework (SecureTransport) once the macOS transport lands — blocked
-      on the server-identity/keychain problem described in "macOS product" above; do it on a Mac.
+- [~] macOS: TLS via Security.framework (SecureTransport) — `ws_transport_mac.mm` **landed and
+      compiles on CI**; the self-signed identity uses the CryptoAPI-verified `crypto/x509_selfsigned`
+      builder. Needs a Mac to validate the SecureTransport/keychain runtime (see "macOS product").
 
 ### Step 9 — Peer mesh: macOS connection thread
 
