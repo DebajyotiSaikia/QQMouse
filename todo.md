@@ -83,8 +83,7 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
       mesh + remembers the paths; the destination puts a matching promise on its clipboard whose
       byte source dials the source's on-demand `/files` channel (secure link, port 47803) and
       drives the (done) `net/FileChannel` — so a paste in Explorer materialises the files with its
-      OWN native copy-progress + error UI. Multi-file; no staging temp. Needs two Windows machines
-      + Explorer to validate the last mile.
+      OWN native copy-progress + error UI. Multi-file; no staging temp. Needs two Windows machines + Explorer to validate the last mile.
 - [ ] `platform/filepromise_mac.mm` — `NSFilePromiseProvider`; native Finder progress (§9.2).
       (The mesh announce, the `/files` secure channel, and `net/FileChannel` are cross-platform and
       done; only the macOS OS-provider glue remains, and it needs a Mac + Finder.)

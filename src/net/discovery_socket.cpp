@@ -3,14 +3,20 @@
 #ifdef _WIN32
 #include <winsock2.h>
 #include <ws2tcpip.h>
+#include <iphlpapi.h> // GetAdaptersAddresses (must follow winsock2.h)
 using socklen_t = int;
 #else
 #include <arpa/inet.h>
+#include <ifaddrs.h>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <unistd.h>
 #endif
+
+#include <cstdint>
+#include <vector>
 
 namespace sm::net {
 
@@ -37,6 +43,50 @@ struct WsaScope {
 void closeSock(int s) { ::close(s); }
 #endif
 
+// Per-interface directed broadcast addresses (network byte order). A limited broadcast
+// to 255.255.255.255 only egresses the interface the default route points at -- which,
+// with a VPN up, is the VPN tunnel, so LAN peers never see it. Sending to each active
+// interface's OWN subnet broadcast (ip | ~mask) makes the routing table egress the
+// matching NIC, so the LAN adapter is always covered regardless of VPN/default route.
+std::vector<uint32_t> directedBroadcasts() {
+    std::vector<uint32_t> out;
+#ifdef _WIN32
+    ULONG size = 15000;
+    std::vector<uint8_t> buf(size);
+    const ULONG flags = GAA_FLAG_SKIP_ANYCAST | GAA_FLAG_SKIP_MULTICAST | GAA_FLAG_SKIP_DNS_SERVER;
+    ULONG rc = GetAdaptersAddresses(AF_INET, flags, nullptr,
+                                    reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data()), &size);
+    if (rc == ERROR_BUFFER_OVERFLOW) {
+        buf.resize(size);
+        rc = GetAdaptersAddresses(AF_INET, flags, nullptr,
+                                  reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data()), &size);
+    }
+    if (rc != NO_ERROR) return out;
+    for (auto* a = reinterpret_cast<IP_ADAPTER_ADDRESSES*>(buf.data()); a; a = a->Next) {
+        if (a->OperStatus != IfOperStatusUp || a->IfType == IF_TYPE_SOFTWARE_LOOPBACK) continue;
+        for (auto* ua = a->FirstUnicastAddress; ua; ua = ua->Next) {
+            if (!ua->Address.lpSockaddr || ua->Address.lpSockaddr->sa_family != AF_INET) continue;
+            uint32_t ip = ntohl(reinterpret_cast<sockaddr_in*>(ua->Address.lpSockaddr)->sin_addr.s_addr);
+            unsigned prefix = ua->OnLinkPrefixLength;
+            if (prefix == 0 || prefix > 32) continue;
+            uint32_t mask = (prefix == 32) ? 0xFFFFFFFFu : ~((1u << (32 - prefix)) - 1);
+            out.push_back(htonl((ip & mask) | ~mask));
+        }
+    }
+#else
+    ifaddrs* ifap = nullptr;
+    if (getifaddrs(&ifap) != 0) return out;
+    for (ifaddrs* ifa = ifap; ifa; ifa = ifa->ifa_next) {
+        if (!ifa->ifa_addr || ifa->ifa_addr->sa_family != AF_INET) continue;
+        if ((ifa->ifa_flags & IFF_LOOPBACK) || !(ifa->ifa_flags & IFF_UP)) continue;
+        if (!(ifa->ifa_flags & IFF_BROADCAST) || !ifa->ifa_broadaddr) continue;
+        out.push_back(reinterpret_cast<sockaddr_in*>(ifa->ifa_broadaddr)->sin_addr.s_addr);
+    }
+    freeifaddrs(ifap);
+#endif
+    return out;
+}
+
 } // namespace
 
 bool broadcastBeacon(const Beacon& b, uint16_t port) {
@@ -50,16 +100,24 @@ bool broadcastBeacon(const Beacon& b, uint16_t port) {
     int yes = 1;
     setsockopt(s, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&yes), sizeof(yes));
 
-    sockaddr_in addr{};
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(port);
-    addr.sin_addr.s_addr = htonl(INADDR_BROADCAST);
+    // Send to every interface's directed broadcast (covers the LAN even with a VPN up),
+    // plus the limited broadcast as a belt-and-braces fallback.
+    std::vector<uint32_t> targets = directedBroadcasts();
+    targets.push_back(htonl(INADDR_BROADCAST));
 
-    int sent = sendto(s, reinterpret_cast<const char*>(pkt.data()),
-                      static_cast<int>(pkt.size()), 0,
-                      reinterpret_cast<sockaddr*>(&addr), sizeof(addr));
+    bool anySent = false;
+    for (uint32_t dst : targets) {
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(port);
+        addr.sin_addr.s_addr = dst;
+        int sent = sendto(s, reinterpret_cast<const char*>(pkt.data()),
+                          static_cast<int>(pkt.size()), 0, reinterpret_cast<sockaddr*>(&addr),
+                          sizeof(addr));
+        if (sent == static_cast<int>(pkt.size())) anySent = true;
+    }
     closeSock(s);
-    return sent == static_cast<int>(pkt.size());
+    return anySent;
 }
 
 bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out) {

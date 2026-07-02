@@ -973,6 +973,14 @@ LRESULT CALLBACK wndProc(HWND hwnd, UINT msg, WPARAM w, LPARAM l) {
 } // namespace
 
 int runTrayApp() {
+    // Single-instance guard: if another copy is already running (e.g. the installer's
+    // "Run" launched one while a zombie from a reinstall lingers, or autostart already
+    // ran it), exit quietly so two instances never fight over the fixed ports.
+    HANDLE singleton = CreateMutexW(nullptr, TRUE, L"SkittermouseSingletonMutex");
+    if (singleton && GetLastError() == ERROR_ALREADY_EXISTS) {
+        return 0; // another instance owns the tray; leave it be
+    }
+
     AppState app;
     g_app = &app;
 

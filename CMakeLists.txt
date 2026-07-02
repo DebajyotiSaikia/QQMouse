@@ -117,7 +117,7 @@ target_link_libraries(skittermouse_platform PUBLIC skittermouse_core)
 if(WIN32)
     # All native, zero third-party (Section 16): bcrypt now (Sections 5.4/7); later
     # ws2_32 (Sections 5/6), shell/comctl (Section 10), etc.
-    target_link_libraries(skittermouse_platform PUBLIC bcrypt ws2_32 user32 shell32 secur32 crypt32 ole32)
+    target_link_libraries(skittermouse_platform PUBLIC bcrypt ws2_32 user32 shell32 secur32 crypt32 ole32 iphlpapi)
 elseif(APPLE)
     target_link_libraries(skittermouse_platform PUBLIC
         "-framework Security" "-framework CoreFoundation" "-framework CoreGraphics"
@@ -217,11 +217,23 @@ if(WIN32)
     set(CPACK_COMPONENT_STARTUP_DESCRIPTION
         "Start Skittermouse automatically when you log in (you can change this later in the tray).")
     set(CPACK_COMPONENT_STARTUP_DISABLED TRUE)
+    # On install: open the app's ports in Windows Firewall (port-based rules avoid any
+    # quote-escaping through CMake->CPack->NSIS), then optionally drop the Startup
+    # shortcut if the "Run on startup" component was ticked.
     set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+      nsExec::Exec 'netsh advfirewall firewall delete rule name=Skittermouse'
+      nsExec::Exec 'netsh advfirewall firewall delete rule name=SkittermouseUDP'
+      nsExec::Exec 'netsh advfirewall firewall add rule name=Skittermouse dir=in action=allow protocol=TCP localport=47800-47803'
+      nsExec::Exec 'netsh advfirewall firewall add rule name=SkittermouseUDP dir=in action=allow protocol=UDP localport=47802'
       IfFileExists '$INSTDIR\\\\bin\\\\startup.marker' 0 +2
         CreateShortCut '$SMSTARTUP\\\\Skittermouse.lnk' '$INSTDIR\\\\bin\\\\skittermouse.exe'
     ")
+    # On uninstall (which also runs before a reinstall): stop any running instance so
+    # the exe isn't locked, then remove the firewall rules + Startup shortcut.
     set(CPACK_NSIS_EXTRA_UNINSTALL_COMMANDS "
+      nsExec::Exec 'taskkill /IM skittermouse.exe /F'
+      nsExec::Exec 'netsh advfirewall firewall delete rule name=Skittermouse'
+      nsExec::Exec 'netsh advfirewall firewall delete rule name=SkittermouseUDP'
       Delete '$SMSTARTUP\\\\Skittermouse.lnk'
     ")
 elseif(APPLE)
