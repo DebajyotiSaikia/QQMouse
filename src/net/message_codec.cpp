@@ -26,7 +26,7 @@ bool isFixedType(MessageType t) {
     }
 }
 
-bool isKnownType(uint8_t t) { return t >= 1 && t <= 9; }
+bool isKnownType(uint8_t t) { return (t >= 1 && t <= 9) || t == 11; }
 
 } // namespace
 

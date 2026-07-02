@@ -27,6 +27,7 @@ enum class MessageType : uint8_t {
     FileChunk       = 8,   // variable length, file channel
     PairingMsg      = 9,   // variable length, pairing only
     PeerHello       = 10,  // variable length; identifies a fresh connection (5.2)
+    FilePromiseAnnounce = 11, // variable length; input channel: "I copied these files" (9)
 };
 
 // Fixed-size hot-path message, used for MouseMove / MouseButton / KeyEvent /

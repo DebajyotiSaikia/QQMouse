@@ -22,6 +22,7 @@
 #include "core/ownership_state.h"
 #include "core/peer_id.h"
 #include "core/server_election.h"
+#include "net/file_promise_announce.h"
 #include "net/transport.h"
 
 namespace sm::app {
@@ -55,6 +56,10 @@ public:
     // Clipboard (spec 8): broadcast a local change unless it echoes a remote write.
     void onLocalClipboardChange(const std::string& text);
 
+    // File promise (spec 9): tell every peer "I copied these files" so the machine the
+    // user pastes on can offer them. Bytes are pulled later over the /files channel.
+    void announceFilePromise(const std::vector<sm::net::FilePromiseItem>& files);
+
     // Pump network input, update liveness, and enforce fail-safe (spec 15).
     void poll(uint64_t now_ms);
     // Broadcast a heartbeat if the interval has elapsed.
@@ -64,6 +69,11 @@ public:
     std::function<void(const sm::core::InputEvent&)> onInject;   // sink injects this
     std::function<void(const std::string&)> onRemoteClipboard;   // write to OS clipboard
     std::function<void(const sm::core::PeerId&)> onOwnerChanged;
+
+    // A peer announced copied files (spec 9): (source peer, file list). The OS layer
+    // puts a matching delay-render promise on the local clipboard.
+    std::function<void(const sm::core::PeerId&, const std::vector<sm::net::FilePromiseItem>&)>
+        onRemoteFilePromise;
 
     // Connection-state transitions, each fired EXACTLY ONCE per change (spec 15:
     // a one-time notification on drop, not a repeating one). A peer that is removed

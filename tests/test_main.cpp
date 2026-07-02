@@ -28,6 +28,7 @@ void run_e2e_encrypted_mesh_tests();
 void run_e2e_secure_connection_tests();
 void run_e2e_full_system_tests();
 void run_filepromise_win_tests();
+void run_file_promise_announce_tests();
 
 int main() {
     run_event_types_tests();
@@ -58,6 +59,7 @@ int main() {
     run_e2e_secure_connection_tests();
     run_e2e_full_system_tests();
     run_filepromise_win_tests();
+    run_file_promise_announce_tests();
 
     std::printf("\n%d checks, %d failure(s)\n", smtest::g_checks, smtest::g_failures);
     return smtest::g_failures == 0 ? 0 : 1;

@@ -32,6 +32,7 @@ add_library(skittermouse_core STATIC
     src/net/file_transfer.cpp
     src/net/file_session.cpp
     src/net/file_channel.cpp
+    src/net/file_promise_announce.cpp
     src/net/ownership_codec.cpp
     src/net/peer_hello.cpp
     src/app/mesh_node.cpp

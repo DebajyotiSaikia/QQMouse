@@ -85,6 +85,13 @@ void MeshNode::onLocalClipboardChange(const std::string& text) {
                                         text.size()));
 }
 
+void MeshNode::announceFilePromise(const std::vector<sm::net::FilePromiseItem>& files) {
+    if (files.empty()) return;
+    std::vector<uint8_t> payload = sm::net::encodeFilePromiseAnnounce(files);
+    broadcast(sm::net::encodeVarMessage(MessageType::FilePromiseAnnounce, payload.data(),
+                                        payload.size()));
+}
+
 void MeshNode::sendHeartbeats(uint64_t now_ms) {
     now_ = now_ms;
     if (lastHeartbeatSent_ != 0 && now_ms - lastHeartbeatSent_ < heartbeatIntervalMs) return;
@@ -162,6 +169,13 @@ void MeshNode::handle(const PeerId& from, const uint8_t* data, std::size_t len, 
             std::string text(m.payload.begin(), m.payload.end());
             clipboard_.noteAppliedRemote(text);
             if (onRemoteClipboard) onRemoteClipboard(text);
+            break;
+        }
+        case MessageType::FilePromiseAnnounce: {
+            std::vector<sm::net::FilePromiseItem> files;
+            if (sm::net::decodeFilePromiseAnnounce(m.payload.data(), m.payload.size(), files) &&
+                onRemoteFilePromise)
+                onRemoteFilePromise(from, files);
             break;
         }
         default:
