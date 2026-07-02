@@ -148,6 +148,19 @@ bool broadcastBeacon(const Beacon& b, uint16_t port) {
     return anySent;
 }
 
+bool sendBeaconTo(const Beacon& b, const std::string& ip, uint16_t port) {
+    WsaScope wsa;
+    if (!wsa.ok) return false;
+    in_addr dst{};
+    if (inet_pton(AF_INET, ip.c_str(), &dst) != 1) return false;
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (s == INVALID_SOCKET) return false;
+    const Bytes pkt = encodeBeacon(b);
+    bool ok = sendTo(s, pkt, dst.s_addr, port);
+    closeSock(s);
+    return ok;
+}
+
 bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out) {
     WsaScope wsa;
     if (!wsa.ok) return false;

@@ -241,6 +241,7 @@ if(WIN32)
     # quote-escaping through CMake->CPack->NSIS), then optionally drop the Startup
     # shortcut if the "Run on startup" component was ticked.
     set(CPACK_NSIS_EXTRA_INSTALL_COMMANDS "
+      nsExec::Exec 'taskkill /IM skittermouse.exe /F'
       nsExec::Exec 'netsh advfirewall firewall delete rule name=Skittermouse'
       nsExec::Exec 'netsh advfirewall firewall delete rule name=SkittermouseUDP'
       nsExec::Exec 'netsh advfirewall firewall delete rule name=SkittermouseOut'

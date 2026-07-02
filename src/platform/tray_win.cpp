@@ -528,19 +528,36 @@ void pairAcceptProc() {
 }
 
 // Presence: broadcast our beacon and listen for others on the discovery port while
-// pairing mode is on, feeding the live table the picker reads (spec 6).
+// pairing mode is on, feeding the live table the picker reads (spec 6). On receiving a
+// beacon we ALSO unicast one straight back to the sender -- so a machine whose own
+// broadcast can't reach us (VPN split routing / corp firewall dropping broadcast) still
+// becomes visible the moment ONE direction's broadcast gets through. Throttled per peer.
 void discoveryProc() {
     sm::net::Beacon self;
     self.machine_name = g_app->self;
     self.machine_id = g_app->self;
     self.port = kMeshPort;
     self.os = 0; // windows
+    std::map<std::string, uint64_t> lastReply; // per-peer unicast-reply throttle
+    uint64_t lastBroadcast = 0;
     while (g_app->pairingActive.load()) {
-        sm::net::broadcastBeacon(self, kDiscoveryPort);
+        const uint64_t now = GetTickCount64();
+        if (now - lastBroadcast >= 400) { // broadcast ~2x/sec
+            sm::net::broadcastBeacon(self, kDiscoveryPort);
+            lastBroadcast = now;
+        }
         sm::net::Beacon in;
-        if (sm::net::receiveBeacon(kDiscoveryPort, 300, in) && in.machine_id != g_app->self) {
-            std::lock_guard<std::mutex> lk(g_app->discMutex);
-            g_app->discovered.onBeacon(in, GetTickCount64());
+        if (sm::net::receiveBeacon(kDiscoveryPort, 250, in) && in.machine_id != g_app->self) {
+            {
+                std::lock_guard<std::mutex> lk(g_app->discMutex);
+                g_app->discovered.onBeacon(in, GetTickCount64());
+            }
+            const uint64_t t = GetTickCount64();
+            uint64_t& lr = lastReply[in.machine_id];
+            if (!in.ip.empty() && (lr == 0 || t - lr >= 700)) {
+                sm::net::sendBeaconTo(self, in.ip, kDiscoveryPort); // let the sender see us
+                lr = t;
+            }
         }
     }
 }
@@ -980,9 +997,19 @@ int runTrayApp() {
 
     // Single-instance guard: if another copy is already running (e.g. the installer's
     // "Run" launched one while a prior instance from autostart/a reinstall lingers),
-    // exit quietly so two instances never fight over the fixed ports. Logged so a
+    // exit quietly so two instances never fight over the fixed ports. A NULL-DACL makes
+    // the mutex visible across integrity levels, so an elevated (autostart) instance and
+    // a de-elevated (finish-page / Start-menu) launch see each other. Logged so a
     // "nothing happened after Finish" report is diagnosable.
-    HANDLE singleton = CreateMutexW(nullptr, TRUE, L"SkittermouseSingletonMutex");
+    SECURITY_DESCRIPTOR sd;
+    SECURITY_ATTRIBUTES sa{};
+    if (InitializeSecurityDescriptor(&sd, SECURITY_DESCRIPTOR_REVISION) &&
+        SetSecurityDescriptorDacl(&sd, TRUE, nullptr, FALSE)) {
+        sa.nLength = sizeof(sa);
+        sa.lpSecurityDescriptor = &sd;
+    }
+    HANDLE singleton =
+        CreateMutexW(sa.lpSecurityDescriptor ? &sa : nullptr, TRUE, L"SkittermouseSingletonMutex");
     if (singleton && GetLastError() == ERROR_ALREADY_EXISTS) {
         sm::log::write("[app] another instance already running; exiting (tray already present)");
         return 0;

@@ -136,6 +136,7 @@ void run_net_tests() {
         std::thread sender([&] {
             while (!stop.load()) {
                 broadcastBeacon(self, port);
+                sendBeaconTo(self, "127.0.0.1", port); // unicast reply path (deterministic on loopback)
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
             }
         });
