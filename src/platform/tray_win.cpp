@@ -64,6 +64,17 @@ std::string configPath() {
     return out;
 }
 
+// A tray balloon notification (spec 15: connection/transfer status).
+void showToast(const std::wstring& title, const std::wstring& message) {
+    if (!g_app) return;
+    NOTIFYICONDATAW n = g_app->nid;
+    n.uFlags = NIF_INFO;
+    wcsncpy_s(n.szInfoTitle, title.c_str(), _TRUNCATE);
+    wcsncpy_s(n.szInfo, message.c_str(), _TRUNCATE);
+    n.dwInfoFlags = NIIF_INFO;
+    Shell_NotifyIconW(NIM_MODIFY, &n);
+}
+
 void showMenu(HWND hwnd) {
     POINT pt;
     GetCursorPos(&pt);
@@ -180,6 +191,9 @@ int runTrayApp() {
         }
     };
     app.mesh->onRemoteClipboard = [](const std::string& t) { setClipboardText(t); };
+    app.mesh->onOwnerChanged = [](const sm::core::PeerId& newOwner) {
+        showToast(L"Skittermouse", L"Input owner is now " + toWide(newOwner));
+    };
 
     HINSTANCE hInst = GetModuleHandleW(nullptr);
     WNDCLASSW wc{};
