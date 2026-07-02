@@ -82,6 +82,19 @@ void run_config_tests() {
         SM_CHECK(re.ineligible.empty());
     }
 
+    // --- Monitor-level layout round-trip (spec 11.4) ------------------------
+    {
+        Config c;
+        c.monitors.push_back(LayoutMonitor{"win-1", 0, 0, 0, 1920, 1080});
+        c.monitors.push_back(LayoutMonitor{"mac-2", 1, 1920, -200, 2560, 1440});
+        Config r = Config::parse(c.serialize());
+        SM_CHECK_EQ(r.monitors.size(), 2u);
+        SM_CHECK(r.monitors[0] == c.monitors[0]);
+        SM_CHECK(r.monitors[1] == c.monitors[1]);
+        SM_CHECK_EQ(r.monitors[1].x, 1920);
+        SM_CHECK_EQ(r.monitors[1].y, -200); // negative coordinate survives
+    }
+
     // --- Tolerant parser: unknown keys / comments / junk lines ignored ------
     {
         std::string text =

@@ -99,6 +99,18 @@ uint16_t toU16(const std::string& s) {
     return static_cast<uint16_t>(v);
 }
 
+int32_t toI32(const std::string& s) {
+    long v = 0;
+    bool neg = false;
+    std::size_t i = 0;
+    if (i < s.size() && (s[i] == '-' || s[i] == '+')) { neg = (s[i] == '-'); ++i; }
+    for (; i < s.size(); ++i) {
+        if (s[i] < '0' || s[i] > '9') break;
+        v = v * 10 + (s[i] - '0');
+    }
+    return static_cast<int32_t>(neg ? -v : v);
+}
+
 std::vector<std::string> toStrIds(const std::vector<PeerId>& ids) {
     return std::vector<std::string>(ids.begin(), ids.end());
 }
@@ -108,6 +120,11 @@ std::vector<std::string> toStrIds(const std::vector<PeerId>& ids) {
 bool PairedDevice::operator==(const PairedDevice& o) const {
     return id == o.id && name == o.name && last_ip == o.last_ip &&
            port == o.port && os == o.os && wol_capable == o.wol_capable;
+}
+
+bool LayoutMonitor::operator==(const LayoutMonitor& o) const {
+    return machine_id == o.machine_id && monitor_index == o.monitor_index &&
+           x == o.x && y == o.y && w == o.w && h == o.h;
 }
 
 std::string Config::serialize() const {
@@ -124,7 +141,11 @@ std::string Config::serialize() const {
     }
     out << "priority=" << joinFields(toStrIds(priority)) << "\n";
     out << "ineligible=" << joinFields(toStrIds(ineligible)) << "\n";
-    out << "layout=" << esc(layout) << "\n";
+    for (const auto& m : monitors) {
+        out << "monitor=" << joinFields({m.machine_id, std::to_string(m.monitor_index),
+                                         std::to_string(m.x), std::to_string(m.y),
+                                         std::to_string(m.w), std::to_string(m.h)}) << "\n";
+    }
     return out.str();
 }
 
@@ -159,8 +180,16 @@ Config Config::parse(const std::string& text) {
         } else if (key == "ineligible") {
             auto f = splitFields(val);
             c.ineligible.assign(f.begin(), f.end());
-        } else if (key == "layout") {
-            c.layout = unesc(val);
+        } else if (key == "monitor") {
+            auto f = splitFields(val);
+            LayoutMonitor m;
+            if (f.size() > 0) m.machine_id = f[0];
+            if (f.size() > 1) m.monitor_index = toI32(f[1]);
+            if (f.size() > 2) m.x = toI32(f[2]);
+            if (f.size() > 3) m.y = toI32(f[3]);
+            if (f.size() > 4) m.w = toI32(f[4]);
+            if (f.size() > 5) m.h = toI32(f[5]);
+            c.monitors.push_back(m);
         }
         // Unknown keys (incl. "version") are ignored on purpose (forward-compat).
     }

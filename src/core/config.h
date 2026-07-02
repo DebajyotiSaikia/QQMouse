@@ -29,6 +29,19 @@ struct PairedDevice {
     bool operator!=(const PairedDevice& o) const { return !(*this == o); }
 };
 
+// Spatial arrangement at the MONITOR level (spec 11.4) -- forward-compatible data
+// only. Edge-of-screen switching is intentionally NOT built on this yet; it exists
+// so adding edge-crossing later needs no data-model change. Coordinates are in the
+// mesh's notional virtual-desktop space.
+struct LayoutMonitor {
+    PeerId  machine_id;
+    int32_t monitor_index = 0;
+    int32_t x = 0, y = 0, w = 0, h = 0;
+
+    bool operator==(const LayoutMonitor& o) const;
+    bool operator!=(const LayoutMonitor& o) const { return !(*this == o); }
+};
+
 struct Settings {
     std::string hotkey = "Ctrl+Alt+Space"; // Section 4.1 default combo
     bool broadcast_presence = true;         // Section 6 discovery beacon on/off
@@ -37,11 +50,11 @@ struct Settings {
 
 class Config {
 public:
-    Settings                  settings;
-    std::vector<PairedDevice> devices;
-    std::vector<PeerId>       priority;    // Section 11.5: index 0 = highest priority
-    std::vector<PeerId>       ineligible;  // removed from coordinator election
-    std::string               layout;      // Section 11.4 forward-compat data (opaque v1)
+    Settings                   settings;
+    std::vector<PairedDevice>  devices;
+    std::vector<PeerId>        priority;    // Section 11.5: index 0 = highest priority
+    std::vector<PeerId>        ineligible;  // removed from coordinator election
+    std::vector<LayoutMonitor> monitors;    // Section 11.4 monitor-level layout (forward-compat)
 
     // Text round-trip (pure, no I/O).
     std::string serialize() const;
