@@ -67,12 +67,11 @@ re-check against [spec.md](spec.md) §16 — the native path exists for all of i
 
 ### Step 12 — Failure & edge-state UI (§15)
 
-- [ ] Connection-dropped tray state + one-time (non-repeating) notification.
-- [ ] Switch-to-unreachable = no-op / brief "unavailable" flash in the picker/tray.
 - [ ] File-transfer mid-stream failure surfaced via native `IStream`/promise error.
 - [ ] Surface protocol-version mismatch ("update Skittermouse on <machine>") in the UI.
       (heartbeat fail-safe, discovery staleness, simultaneous-claim resolution, codec version
-      gate: done and e2e-tested.)
+      gate, **one-time connection-dropped/return toast + switch-to-unreachable "unavailable"
+      flash** via MeshNode transition callbacks (e2e-tested) wired into the Windows tray: done.)
 
 ---
 

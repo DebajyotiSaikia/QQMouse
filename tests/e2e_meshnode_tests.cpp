@@ -103,4 +103,59 @@ void run_e2e_meshnode_tests() {
     for (int i = 0; i < 4; ++i) pump(5000 + i, false, true, true); // A dies
     SM_CHECK(B.isLocalOwner()); // B took back its own input
     SM_CHECK(C.isLocalOwner()); // C too
+
+    // --- One-time online/offline transitions + switch-to-unreachable (spec 15) --
+    {
+        smtest::LoopbackPair XY;
+        app::MeshNode X("X"), Y("Y");
+        std::vector<core::PeerId> pr2 = {"X", "Y"};
+        for (app::MeshNode* n : {&X, &Y}) {
+            n->setPriority(pr2);
+            n->heartbeatIntervalMs = 0;
+            n->heartbeatTimeoutMs = 1000;
+        }
+        X.addPeer("Y", &XY.a);
+        Y.addPeer("X", &XY.b);
+
+        int onlineEvents = 0, offlineEvents = 0;
+        core::PeerId lastOnline, lastOffline;
+        X.onPeerOnline = [&](const core::PeerId& id) {
+            ++onlineEvents;
+            lastOnline = id;
+        };
+        X.onPeerOffline = [&](const core::PeerId& id) {
+            ++offlineEvents;
+            lastOffline = id;
+        };
+
+        auto pump2 = [&](uint64_t now, bool xOn, bool yOn) {
+            if (xOn) X.sendHeartbeats(now);
+            if (yOn) Y.sendHeartbeats(now);
+            X.poll(now);
+            Y.poll(now);
+        };
+
+        // Y comes online -> exactly one onPeerOnline(Y), no repeats while it stays up.
+        for (int i = 0; i < 4; ++i) pump2(100 + i, true, true);
+        SM_CHECK_EQ(onlineEvents, 1);
+        SM_CHECK_EQ(lastOnline, std::string("Y"));
+        SM_CHECK_EQ(offlineEvents, 0);
+
+        // Y drops (stops sending) -> exactly one onPeerOffline(Y), not repeating.
+        for (int i = 0; i < 5; ++i) pump2(2000 + i, true, false);
+        SM_CHECK_EQ(offlineEvents, 1);
+        SM_CHECK_EQ(lastOffline, std::string("Y"));
+
+        // Switching to the now-unreachable Y is a no-op that flashes "unavailable".
+        int unavail = 0;
+        core::PeerId unavailTarget;
+        X.onSwitchUnavailable = [&](const core::PeerId& id) {
+            ++unavail;
+            unavailTarget = id;
+        };
+        X.requestSwitchTo("Y");
+        SM_CHECK_EQ(unavail, 1);
+        SM_CHECK_EQ(unavailTarget, std::string("Y"));
+        SM_CHECK(X.isLocalOwner()); // ownership never handed to a dead peer
+    }
 }

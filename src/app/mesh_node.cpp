@@ -29,6 +29,12 @@ void MeshNode::addPeer(const PeerId& id, sm::net::Transport* transport) {
 void MeshNode::removePeer(const PeerId& id) {
     peers_.erase(id);
     heartbeat_.forget(id);
+    auto it = peerOnline_.find(id);
+    if (it != peerOnline_.end()) {
+        const bool wasOnline = it->second;
+        peerOnline_.erase(it);
+        if (wasOnline && onPeerOffline) onPeerOffline(id);
+    }
     refreshOnlineAndFailSafe(now_);
 }
 
@@ -38,6 +44,13 @@ bool MeshNode::isPeerOnline(const PeerId& id) const {
 }
 
 void MeshNode::requestSwitchTo(const PeerId& target) {
+    // Switching to an unreachable machine is a no-op, never a hang (spec 15). Self
+    // is always reachable; the fail-safe revert calls ownership_ directly and so is
+    // unaffected by this guard.
+    if (target != self_ && !isPeerOnline(target)) {
+        if (onSwitchUnavailable) onSwitchUnavailable(target);
+        return;
+    }
     PeerId before = ownership_.owner();
     OwnershipClaim claim = ownership_.requestSwitchTo(target);
     auto payload = sm::net::encodeOwnershipClaim(claim);
@@ -154,7 +167,19 @@ void MeshNode::refreshOnlineAndFailSafe(uint64_t now) {
     std::vector<PeerId> online;
     online.push_back(self_);
     for (auto& kv : peers_) {
-        if (heartbeat_.isAlive(kv.first, now, heartbeatTimeoutMs)) online.push_back(kv.first);
+        const bool alive = heartbeat_.isAlive(kv.first, now, heartbeatTimeoutMs);
+        if (alive) online.push_back(kv.first);
+        // Emit a one-time transition callback whenever a peer's liveness flips.
+        auto it = peerOnline_.find(kv.first);
+        const bool prev = (it != peerOnline_.end()) && it->second;
+        if (alive != prev) {
+            peerOnline_[kv.first] = alive;
+            if (alive) {
+                if (onPeerOnline) onPeerOnline(kv.first);
+            } else {
+                if (onPeerOffline) onPeerOffline(kv.first);
+            }
+        }
     }
     election_.setOnline(online);
 

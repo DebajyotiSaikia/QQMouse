@@ -194,6 +194,18 @@ int runTrayApp() {
     app.mesh->onOwnerChanged = [](const sm::core::PeerId& newOwner) {
         showToast(L"Skittermouse", L"Input owner is now " + toWide(newOwner));
     };
+    // Connection state (spec 15): one-time balloon on drop/return, never repeating
+    // (the transition callbacks fire exactly once per change).
+    app.mesh->onPeerOffline = [](const sm::core::PeerId& id) {
+        showToast(L"Skittermouse", L"Lost connection to " + toWide(id));
+    };
+    app.mesh->onPeerOnline = [](const sm::core::PeerId& id) {
+        showToast(L"Skittermouse", L"Connected to " + toWide(id));
+    };
+    // Switch-to-unreachable (spec 15): a brief "unavailable" flash, not a hang.
+    app.mesh->onSwitchUnavailable = [](const sm::core::PeerId& id) {
+        showToast(L"Skittermouse", toWide(id) + L" is unavailable");
+    };
 
     HINSTANCE hInst = GetModuleHandleW(nullptr);
     WNDCLASSW wc{};

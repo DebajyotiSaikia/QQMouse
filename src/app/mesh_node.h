@@ -64,6 +64,15 @@ public:
     std::function<void(const std::string&)> onRemoteClipboard;   // write to OS clipboard
     std::function<void(const sm::core::PeerId&)> onOwnerChanged;
 
+    // Connection-state transitions, each fired EXACTLY ONCE per change (spec 15:
+    // a one-time notification on drop, not a repeating one). A peer that is removed
+    // while online also fires onPeerOffline.
+    std::function<void(const sm::core::PeerId&)> onPeerOnline;
+    std::function<void(const sm::core::PeerId&)> onPeerOffline;
+    // Fired when a switch is requested to a peer that is currently unreachable; the
+    // switch is a no-op (spec 15: never a hang), and the UI can flash "unavailable".
+    std::function<void(const sm::core::PeerId&)> onSwitchUnavailable;
+
     uint64_t heartbeatTimeoutMs = 2000;
     uint64_t heartbeatIntervalMs = 500;
 
@@ -74,6 +83,7 @@ private:
 
     sm::core::PeerId self_;
     std::map<sm::core::PeerId, sm::net::Transport*> peers_;
+    std::map<sm::core::PeerId, bool> peerOnline_; // last-known liveness, for transitions
     sm::core::OwnershipState ownership_;
     sm::core::ServerElection election_;
     sm::core::Heartbeat heartbeat_;
