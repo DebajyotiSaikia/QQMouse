@@ -5,15 +5,17 @@ is not yet built** — as each item lands, delete it from here.
 
 ## Status
 
-- Foundation + app-logic + Windows app shell landed and unit-tested (native C++ only,
-  **569 checks green**, Windows + macOS CI green). The Windows build is now a **real tray
-  application** (Shell_NotifyIcon icon + menu, global hotkey, clipboard listener), not a
-  console stub. Pure logic, crypto, protocol, and transport pieces are all tested; the WS
-  client transport, capture/injection, clipboard, autostart, lock, and discovery sockets
-  compile.
-- Remaining: TLS-wrap + listener for the transport, the picker window, wiring capture/mesh/
-  pairing behind the tray shell, OS file-promise/wol-diag glue, all macOS `.mm` backends,
-  and hardware / two-machine / macOS validation.
+- Native C++ only, **619 checks green**, Windows + macOS CI green. Implemented + unit-tested:
+  all core logic + crypto (AES-256-GCM / ECDH P-256 / SHA / HMAC / HKDF / base64, KAT-verified),
+  pairing, the full protocol/codec layer, the **mesh coordination brain** (`app/MeshNode`:
+  N-peer switch broadcast, coordinator election/failover, heartbeat fail-safe, clipboard sync,
+  input forwarding) with a 3-node headless e2e, and the file-transfer session. The Windows
+  build is a **real tray app**. Windows platform (capture/inject/WS transport/clipboard/lock/
+  autostart/wol-diag/pairing-dialog) and the macOS backends (crypto/capture/inject/clipboard/
+  lock/autostart/pairing-dialog) all compile on their CI runners.
+- Remaining: the transport's TLS wrap + listener side, the picker/tray-menu switch wiring, the
+  macOS Cocoa UI (tray/hotkey/picker), OS file-promise (IStream / NSFilePromiseProvider),
+  wiring MeshNode onto real sockets, and hardware / two-machine / macOS validation.
 
 ---
 
@@ -29,121 +31,77 @@ re-check against [spec.md](spec.md) §16 — the native path exists for all of i
 
 ## By build order (spec §17)
 
-### Step 2 — Capture + injection
-
-- [ ] Wire the (done, tested) `core/input_pipeline` (capture → stuck-key tracker → forward)
-      to `capture_win`/`inject_win` in the real app, and run the local hook→inject sanity
-      loop. (pure pipeline + capture/inject compile; app wiring + hardware validation remain.)
-
-### Step 3 — Pairing (§7)
-
-- [ ] `pairing/pairing_dialog_win.cpp` — native confirm/reject dialog showing the 6-digit
-      code (§7.1). (crypto, ECDH handshake, verification code, HKDF PSK, key store: done.)
-
-### Step 4 — Input channel (§5)
+### Step 4 — Input channel: transport finish (§5)
 
 - [ ] TLS-wrap (Schannel) the (done) TCP+WebSocket client transport for full `wss://`, and add
       the server/listener side (accept + server handshake); differentiate `/input` vs `/files`.
-- [ ] `net/ws_input_channel.h/.cpp` — persistent channel carrying the hot-path messages;
-      AES-256-GCM per message with a strictly-incrementing nonce; version check on connect.
-- [ ] Milestone: two machines forwarding encrypted input end-to-end.
-      (transport interface, WS handshake/framing/assembler, client transport, message codec: done.)
+- [ ] `net/ws_input_channel` — persistent channel with AES-256-GCM per message
+      (strictly-incrementing nonce) over the transport; wire `MeshNode` onto it.
+- [ ] Milestone: two real machines forwarding encrypted input end-to-end. (transport interface,
+      WS handshake/framing/assembler, client transport, message codec, MeshNode routing,
+      3-node loopback e2e: done.)
 
-### Step 5 — Switching UX (§4, §10, §15)
+### Step 5 — Switching UX finish (§4, §10)
 
-- [ ] Wire the (done) tray app's per-device menu click + `WM_HOTKEY` to real switch actions
-      once the mesh is connected; add the fallback-combo path if `RegisterHotKey` fails (§4.1).
+- [ ] Wire the tray menu's per-device click + `WM_HOTKEY` to `MeshNode::requestSwitchTo` once
+      the mesh is connected; add the fallback-combo path if `RegisterHotKey` fails.
 - [ ] `ui/picker_window_win.cpp` — topmost focus-stealing list over the (done) `ui/menu_model`;
       Up/Down/Enter/Esc; local keyboard hook while open; offline greyed; clean dismiss (§4.2).
-- [ ] Apply `key_translation` at injection when target OS differs (§4.5). (remap table: done.)
-- [ ] `ui/toast_notify.h/.cpp` — connection/transfer status notifications (§15).
-      (Tray app shell — window/message loop, tray icon+menu, hotkey, clipboard listener — done.)
+- [ ] `ui/toast_notify` — connection/transfer status notifications (§15).
+      (hotkey parser, menu model, tray shell, hotkey registration: done.)
 
-### Step 6 — Second platform (macOS) parity
+### Step 6 — macOS Cocoa UI parity (§4, §10)
 
-- [ ] `platform/capture_mac.mm` — `CGEventTapCreate`; explicit Accessibility permission prompt + denial/revocation handling (§3.1).
-- [ ] `platform/inject_mac.mm` — `CGEventPost` (§3.2).
-- [ ] `platform/hotkey_mac.mm` — filtering `CGEventTap` / `RegisterEventHotKey` (§4.1).
-- [ ] `ui/picker_window_mac.mm` — topmost key-focus-stealing panel (§4.2).
-- [ ] `platform/tray_mac.mm` — `NSStatusBar` (§10).
-- [ ] `platform/crypto_mac.mm` — CommonCrypto AES-GCM + Security.framework ECDH (§5.4, §7.1).
-- [ ] `pairing/pairing_dialog_mac.mm` — `NSAlert` code confirm (§7.1).
+- [ ] `platform/hotkey_mac.mm` — `RegisterEventHotKey` / filtering `CGEventTap` (§4.1).
+- [ ] `ui/picker_window_mac.mm` — topmost key-focus-stealing NSPanel (§4.2).
+- [ ] `platform/tray_mac.mm` — `NSStatusBar` status item + menu (§10); the macOS app main().
+      (macOS crypto/capture/inject/clipboard/lock/autostart/pairing-dialog: done and compiling.)
 
-### Step 7 — Discovery (§6)
+### Step 9 — Peer mesh: remaining (§11.4)
 
-- [ ] Wire the (done) `net/discovery_socket` (broadcast/receive) + `discovery_beacon` codec +
-      `discovery_table` into a periodic beacon loop; honor the `broadcast_presence` config
-      toggle. (sockets + codec + table: done.)
+- [ ] `core/config` layout config — monitor-level spatial arrangement, forward-compat data
+      only, **no** edge-crossing.
+- [ ] Wire `MeshNode` into the app with real per-peer transports (connect/accept on pairing).
+      (N-peer ownership broadcast, over-the-wire race resolution, coordinator election/
+      failover/failback, priority list: done and e2e-tested.)
 
-### Step 8 — Clipboard sync (§8)
+### Step 10 — File transfer: OS delay-render (§9)
 
-- [ ] Broadcast local clipboard changes to peers (the tray app already listens via
-      `AddClipboardFormatListener`, applies the exclusion check, and runs loop-prevention —
-      it just needs a connected mesh to send to).
-- [ ] `platform/clipboard_mac.mm` — poll `NSPasteboard.changeCount` 200–500 ms.
-      (Windows listener + CF_UNICODETEXT read/write + password-manager exclusion: done.)
-
-### Step 9 — Peer mesh, generalized to N (§2.1, §11)
-
-- [ ] Wire to real N-1 persistent connections per machine.
-- [ ] `SwitchOwner` broadcasts to **all** peers (never a private 2-party handshake) (§11.2).
-- [ ] Over-the-wire race handling per §11.3; pair-individually join (no transitive trust).
-- [ ] `core/config` layout config — monitor-level spatial arrangement, forward-compat data only, **no** edge-crossing (§11.4).
-
-#### Coordinator failover — priority-ordered "server" fallback
-
-- [ ] User designates paired machines in a **priority order** (1, 2, 3, 4, 5, …). The current
-      coordinator ("server") is the highest-priority machine currently online; for machine 5
-      to act as server, all of 1–4 must be offline. Fails over down the list automatically,
-      and **fails back** preemptively when a higher-priority machine returns.
-- [ ] The coordinator has **no special permissions** — it is only a deterministic, mesh-wide
-      agreed reference computed identically on every machine from (priority list, online set).
-- [ ] **All paired machines are on the list by default**; the user may remove a machine so it
-      is never eligible. New pairings append at lowest priority.
-- [ ] Wire the (done) `core/server_election` logic to the live online set from the mesh,
-      persist the priority list in `core/config` (done), and surface it as "primary" (never
-      "server") in the settings UI (§10 wording).
-
-### Step 10 — File transfer (§9)
-
-- [ ] `net/ws_file_channel.h/.cpp` — on-demand WSS, chunked bytes, opened per transfer, closed
-      after (§5.1). (session_token + `net/file_transfer` meta/chunk codec: done.)
-- [ ] `platform/filepromise_win.cpp` — `IDataObject` delay-render: `CFSTR_FILEDESCRIPTORW` (meta now) + `CFSTR_FILECONTENTS` (`IStream` pulls bytes only on `GetData`); multi-file from the start; native Explorer progress + error UI (§9.1).
+- [ ] `platform/filepromise_win.cpp` — `IDataObject` delay-render: `CFSTR_FILEDESCRIPTORW` +
+      `CFSTR_FILECONTENTS` (`IStream::Read` pulls bytes on paste) over the (done) file session;
+      multi-file; native Explorer progress + error UI (§9.1).
 - [ ] `platform/filepromise_mac.mm` — `NSFilePromiseProvider`; native Finder progress (§9.2).
-- [ ] Bidirectional: every machine is both promise-provider and consumer (§9.3).
+- [ ] `net/ws_file_channel` — open the on-demand file transport per transfer, driving the
+      (done) `net/file_session` sender/receiver. Bidirectional (§9.3).
 
-### Step 11 — Wake-on-LAN, auto-start, lock/unlock (§12–14)
+### Step 11 — WoL / lock-unlock finish (§12, §14)
 
-- [ ] `platform/wol_diag_win.cpp` — NIC WoL (`powercfg /deviceenablewake`) + OS wake (WMI `MSPower_DeviceWakeEnable`); cannot check BIOS — never claim certainty (§12).
-- [ ] "Waking…" state + 30–60 s timeout + guided fallback flow around the (done) magic-packet UDP sender (§12).
-- [ ] `platform/autostart_mac.mm` — `LaunchAgent` plist (§13). (`autostart_win` = Task Scheduler, elevated: done.)
-- [ ] `platform/lock_mac.mm` — equivalent lock call (§14). (`lock_win` = LockWorkStation: done.)
-- [ ] Unlock = switch-then-type only (no scripted credentials); **verify Secure Desktop/`LogonUI` behavior on a real locked machine** (§14 open question).
+- [ ] "Waking…" state + 30–60 s timeout + guided fallback flow around the (done) magic-packet
+      sender + (done) `wol_diag`.
+- [ ] Unlock = switch-then-type only; **verify Secure Desktop / `LogonUI` behavior on a real
+      locked machine** (open question). (lock_win/lock_mac, autostart_win/mac: done.)
 
-### Step 12 — Failure & edge-state hardening (§15)
+### Step 12 — Failure & edge-state UI (§15)
 
-- [ ] Wire the (done) `core/heartbeat` watchdog into the app: on owner-drop, every sink reverts
-      to local control (~1–2 s timeout, silent-death safe).
 - [ ] Connection-dropped tray state + one-time (non-repeating) notification.
-- [ ] Switch-to-unreachable = no-op / brief "unavailable" flash, never hang/crash.
-- [ ] File-transfer mid-stream failure surfaced via native `IStream`/promise error (verify in testing).
-- [ ] Discovery staleness timeout (drop offline machines from "Connect to…").
-- [ ] Surface protocol-version mismatch cleanly ("update Skittermouse on <machine>") at connect. (codec-level version gate: done.)
-- [ ] Simultaneous switch claims resolved per §11.3, not undefined.
+- [ ] Switch-to-unreachable = no-op / brief "unavailable" flash in the picker/tray.
+- [ ] File-transfer mid-stream failure surfaced via native `IStream`/promise error.
+- [ ] Surface protocol-version mismatch ("update Skittermouse on <machine>") in the UI.
+      (heartbeat fail-safe, discovery staleness, simultaneous-claim resolution, codec version
+      gate: done and e2e-tested.)
 
 ---
 
 ## Tests — 100% coverage (all steps)
 
-- [~] Unit tests for every pure-logic module landed so far (**533 checks**, native harness):
-  core logic, crypto (KAT + OpenSSL cross-check, incl. SHA-1/base64), pairing, session
-  token, WS handshake/framing/assembler, message codec, WoL, beacon, discovery table,
-  heartbeat, input pipeline, config, key_translation. Extend to 100% as new modules land.
-- [~] Headless e2e flow through the real Transport (loopback): pairing → session token → input
-  forwarding + stuck-key release → ownership switch → clipboard loop-prevention → heartbeat
-  fail-safe → protocol-mismatch reject. Extend with clipboard/file-transfer over the wire
-  and coordinator failover/failback as those land.
-- [~] Keep the Windows + macOS CI builds green and all tests passing at every step. (533/533.)
+- [~] **619 checks**, native harness: all core logic, crypto (KAT + OpenSSL cross-check),
+  pairing, session token, WS handshake/framing/assembler, message + ownership + file codecs,
+  file session, WoL, beacon, discovery table, heartbeat, input pipeline, hotkey, menu model,
+  config, key_translation. Extend as new pure logic lands.
+- [~] Headless e2e through the real Transport (loopback): a 2-node full flow AND a 3-node mesh
+  (switch broadcast, coordinator failover/failback, input forward, clipboard loop-prevent,
+  owner-drop fail-safe, version reject). Extend with file transfer + TLS as those land.
+- [~] Windows + macOS CI green at every step (619/619).
 
 ---
 
