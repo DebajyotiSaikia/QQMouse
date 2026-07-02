@@ -55,6 +55,8 @@ if(WIN32)
         src/platform/crypto_win.cpp       # Sections 5.4/7: AES-256-GCM, ECDH, HMAC via CNG/BCrypt
         src/platform/inject_win.cpp       # Section 3.2: SendInput
         src/platform/capture_win.cpp      # Section 3.1: WH_MOUSE_LL + WH_KEYBOARD_LL
+        src/platform/ws_transport_win.cpp # Section 5.1: TCP + WebSocket client transport
+        src/platform/lock_win.cpp         # Section 14: LockWorkStation
         # ... added as sections land
     )
 elseif(APPLE)
