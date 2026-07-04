@@ -54,6 +54,27 @@ Windows/macOS product (guarded by the CMake `else()`/`UNIX AND NOT APPLE` branch
 
 ## Remaining — cross-platform / Windows
 
+### Field bugs — still failing on real hardware after fixes (retest newest nightly)
+
+- **File copy not working.** Paste of a real file still fails on the two-Windows-machine setup.
+  Already shipped this session: `FileReceiver::received()` (serve only bytes actually arrived, not
+  the pre-sized buffer — fixed the original `STG_E_READFAULT`); dedicated **OLE/STA thread** for the
+  delay-render promise (so Explorer's marshaled `IStream::Read` can't block the UI-thread heartbeat
+  pump and drop the input link mid-copy); and a dedicated **drain thread** in `FilePullSession`
+  (pull bytes continuously, independent of Explorer's read cadence, so the sender's 100 ms
+  socket-write wait never times out and aborts mid-file). Next: get the newest `[file]` log lines
+  from **both** machines (`pull COMPLETE` vs `pull FAILED: …` vs corp `send aborted mid-file`) to
+  see which stage now fails; if corp logs `send aborted`, bump the source-side send patience.
+
+- **Still slow — mouse movement / keyboard.** Forwarded input remains laggy despite the latency
+  pass. Already shipped: `TCP_NODELAY` on both sockets (kill Nagle coalescing of the 12-byte input
+  frames); a coalesced high-resolution pump ticker (~200 Hz `kPumpMsg`) replacing the 20 Hz
+  `WM_TIMER` as the mesh recv/inject driver. Next: measure where the remaining latency is — capture
+  vs network vs inject. Suspects to check: the `SetCursorPos` re-anchor per mouse-move under swallow
+  (cost/interaction with the injected-event `LLMHF_INJECTED` filter), per-event socket `send`
+  from the LL hook on the UI thread, and whether the sink's injection is keeping up at high event
+  rates (consider batching/coalescing mouse-move deltas per pump tick rather than 1 msg/event).
+
 ### Run-after-install — diagnose from the log first, then fix
 
 - The release-publish step was broken (403) so earlier fixes weren't reaching your PC — that's fixed
