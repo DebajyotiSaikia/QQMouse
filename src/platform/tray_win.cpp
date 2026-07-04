@@ -538,28 +538,83 @@ void discoveryProc() {
     self.machine_id = g_app->self;
     self.port = kMeshPort;
     self.os = 0; // windows
-    std::map<std::string, uint64_t> lastReply; // per-peer unicast-reply throttle
-    uint64_t lastBroadcast = 0;
+
+    sm::log::write("[disco] start self=" + g_app->self +
+                   " discPort=" + std::to_string(kDiscoveryPort));
+    {
+        auto ifs = sm::net::describeLocalInterfaces();
+        sm::log::write("[disco] interfaces enumerated=" + std::to_string(ifs.size()));
+        for (auto& s : ifs) sm::log::write("[disco]   " + s);
+        if (ifs.empty())
+            sm::log::write("[disco] WARNING no broadcast interfaces -- discovery cannot send");
+    }
+
+    std::map<std::string, uint64_t> lastReply;   // per-peer unicast-reply throttle
+    std::map<std::string, uint64_t> lastRecvLog; // per-peer received-beacon log throttle
+    uint64_t lastBroadcast = 0, lastReportLog = 0, lastIfLog = 0, lastErrLog = 0;
+    unsigned bcastCount = 0, recvCount = 0;
+    bool lastBcastOk = true;
     while (g_app->pairingActive.load()) {
         const uint64_t now = GetTickCount64();
         if (now - lastBroadcast >= 400) { // broadcast ~2x/sec
-            sm::net::broadcastBeacon(self, kDiscoveryPort);
+            std::string report;
+            bool ok = sm::net::broadcastBeacon(self, kDiscoveryPort, &report);
+            ++bcastCount;
             lastBroadcast = now;
+            // Log the send detail every ~5 s, or immediately when the ok-state flips.
+            if (now - lastReportLog >= 5000 || ok != lastBcastOk) {
+                sm::log::write(std::string("[disco] broadcast ok=") + (ok ? "1" : "0") + report);
+                lastReportLog = now;
+                lastBcastOk = ok;
+            }
+        }
+        // Every ~10 s: window summary + re-log interfaces (catches a NIC up/down, and
+        // received=0 makes a one-way path obvious in the log).
+        if (now - lastIfLog >= 10000) {
+            auto ifs = sm::net::describeLocalInterfaces();
+            sm::log::write("[disco] window broadcasts=" + std::to_string(bcastCount) +
+                           " received=" + std::to_string(recvCount) +
+                           " interfaces=" + std::to_string(ifs.size()));
+            for (auto& s : ifs) sm::log::write("[disco]   " + s);
+            bcastCount = recvCount = 0;
+            lastIfLog = now;
         }
         sm::net::Beacon in;
-        if (sm::net::receiveBeacon(kDiscoveryPort, 250, in) && in.machine_id != g_app->self) {
-            {
-                std::lock_guard<std::mutex> lk(g_app->discMutex);
-                g_app->discovered.onBeacon(in, GetTickCount64());
+        std::string rerr;
+        if (sm::net::receiveBeacon(kDiscoveryPort, 250, in, &rerr)) {
+            if (in.machine_id != g_app->self) {
+                ++recvCount;
+                {
+                    std::lock_guard<std::mutex> lk(g_app->discMutex);
+                    g_app->discovered.onBeacon(in, GetTickCount64());
+                }
+                const uint64_t t = GetTickCount64();
+                // First sight of each machine logs immediately; repeats throttle to ~5 s.
+                auto it = lastRecvLog.find(in.machine_id);
+                if (it == lastRecvLog.end()) {
+                    sm::log::write("[disco] FIRST beacon from '" + in.machine_name +
+                                   "' id=" + in.machine_id + " ip=" + in.ip);
+                    lastRecvLog[in.machine_id] = t;
+                } else if (t - it->second >= 5000) {
+                    sm::log::write("[disco] beacon id=" + in.machine_id + " ip=" + in.ip);
+                    it->second = t;
+                }
+                // Unicast reply so the sender discovers us too (throttled to 700 ms).
+                uint64_t& lr = lastReply[in.machine_id];
+                if (!in.ip.empty() && (lr == 0 || t - lr >= 700)) {
+                    bool rok = sm::net::sendBeaconTo(self, in.ip, kDiscoveryPort);
+                    if (!rok || lr == 0 || t - lr >= 5000)
+                        sm::log::write(std::string("[disco] unicast-reply -> ") + in.ip + " ok=" +
+                                       (rok ? "1" : "0"));
+                    lr = t;
+                }
             }
-            const uint64_t t = GetTickCount64();
-            uint64_t& lr = lastReply[in.machine_id];
-            if (!in.ip.empty() && (lr == 0 || t - lr >= 700)) {
-                sm::net::sendBeaconTo(self, in.ip, kDiscoveryPort); // let the sender see us
-                lr = t;
-            }
+        } else if (!rerr.empty() && now - lastErrLog >= 5000) {
+            sm::log::write("[disco] receive error: " + rerr);
+            lastErrLog = now;
         }
     }
+    sm::log::write("[disco] stop");
 }
 
 // --- File transfer glue (spec 9) --------------------------------------------------

@@ -15,7 +15,9 @@ using socklen_t = int;
 #include <unistd.h>
 #endif
 
+#include <cerrno>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 namespace sm::net {
@@ -105,11 +107,39 @@ bool sendTo(SOCKET s, const Bytes& pkt, uint32_t dst, uint16_t port) {
     return sent == static_cast<int>(pkt.size());
 }
 
+// Dotted-quad string for a network-byte-order IPv4 (diagnostics only).
+std::string ipToStr(uint32_t netAddr) {
+    in_addr a{};
+    a.s_addr = netAddr;
+    char buf[INET_ADDRSTRLEN] = "";
+    return inet_ntop(AF_INET, &a, buf, sizeof(buf)) ? std::string(buf) : std::string("?");
+}
+
+// Last socket error code (WSAGetLastError on Windows, errno on POSIX).
+int lastSockErr() {
+#ifdef _WIN32
+    return WSAGetLastError();
+#else
+    return errno;
+#endif
+}
+
 } // namespace
 
-bool broadcastBeacon(const Beacon& b, uint16_t port) {
+std::vector<std::string> describeLocalInterfaces() {
     WsaScope wsa;
-    if (!wsa.ok) return false;
+    std::vector<std::string> out;
+    for (const NicAddr& nic : localInterfaces())
+        out.push_back("ip=" + ipToStr(nic.local) + " bcast=" + ipToStr(nic.bcast));
+    return out;
+}
+
+bool broadcastBeacon(const Beacon& b, uint16_t port, std::string* report) {
+    WsaScope wsa;
+    if (!wsa.ok) {
+        if (report) *report = "WSAStartup failed";
+        return false;
+    }
 
     const Bytes pkt = encodeBeacon(b);
     const std::vector<NicAddr> nics = localInterfaces();
@@ -121,21 +151,33 @@ bool broadcastBeacon(const Beacon& b, uint16_t port) {
     // gets it. (This is the fix for "one PC can't be discovered when a VPN is up".)
     for (const NicAddr& nic : nics) {
         SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (s == INVALID_SOCKET) continue;
+        if (s == INVALID_SOCKET) {
+            if (report) *report += " [" + ipToStr(nic.local) + " socket-fail]";
+            continue;
+        }
         int yes = 1;
         setsockopt(s, SOL_SOCKET, SO_BROADCAST, reinterpret_cast<const char*>(&yes), sizeof(yes));
         sockaddr_in local{};
         local.sin_family = AF_INET;
         local.sin_addr.s_addr = nic.local;
         local.sin_port = 0;
-        bind(s, reinterpret_cast<sockaddr*>(&local), sizeof(local)); // best-effort pin to NIC
-        if (sendTo(s, pkt, nic.bcast, port)) anySent = true;
-        if (sendTo(s, pkt, htonl(INADDR_BROADCAST), port)) anySent = true;
+        int bindrc = bind(s, reinterpret_cast<sockaddr*>(&local), sizeof(local)); // pin to NIC
+        bool subOk = sendTo(s, pkt, nic.bcast, port);
+        int subErr = subOk ? 0 : lastSockErr();
+        bool limOk = sendTo(s, pkt, htonl(INADDR_BROADCAST), port);
+        int limErr = limOk ? 0 : lastSockErr();
+        if (subOk || limOk) anySent = true;
+        if (report) {
+            *report += " [" + ipToStr(nic.local) + "->" + ipToStr(nic.bcast) +
+                       (bindrc == 0 ? "" : " bind-fail") + " sub=" + (subOk ? "ok" : std::to_string(subErr)) +
+                       " lim=" + (limOk ? "ok" : std::to_string(limErr)) + "]";
+        }
         closeSock(s);
     }
 
     // Fallback for the (rare) no-interface-enumerated case: one unbound limited cast.
     if (nics.empty()) {
+        if (report) *report += " [no-interfaces-enumerated]";
         SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         if (s != INVALID_SOCKET) {
             int yes = 1;
@@ -181,12 +223,18 @@ bool isPrivateIpv4(const std::string& ip) {
     return isPrivateAddr(a.s_addr);
 }
 
-bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out) {
+bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out, std::string* err) {
     WsaScope wsa;
-    if (!wsa.ok) return false;
+    if (!wsa.ok) {
+        if (err) *err = "WSAStartup failed";
+        return false;
+    }
 
     SOCKET s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-    if (s == INVALID_SOCKET) return false;
+    if (s == INVALID_SOCKET) {
+        if (err) *err = "socket() failed err=" + std::to_string(lastSockErr());
+        return false;
+    }
 
     int yes = 1;
     setsockopt(s, SOL_SOCKET, SO_REUSEADDR, reinterpret_cast<const char*>(&yes), sizeof(yes));
@@ -196,6 +244,7 @@ bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out) {
     addr.sin_port = htons(port);
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     if (bind(s, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) != 0) {
+        if (err) *err = "bind(" + std::to_string(port) + ") failed err=" + std::to_string(lastSockErr());
         closeSock(s);
         return false;
     }

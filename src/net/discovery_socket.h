@@ -6,13 +6,22 @@
 // the real security gate. Decoded beacons feed net/discovery_table.
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "net/discovery_beacon.h"
 
 namespace sm::net {
 
+// Human-readable list of the interfaces broadcastBeacon() will send from, e.g.
+// "ip=192.168.4.20 bcast=192.168.7.255". For on-machine discovery diagnostics --
+// reveals a VPN/Hyper-V NIC stealing the route, or the real LAN NIC missing.
+std::vector<std::string> describeLocalInterfaces();
+
 // Broadcast one beacon to 255.255.255.255:port. Returns false on socket error.
-bool broadcastBeacon(const Beacon& b, uint16_t port);
+// If `report` is non-null it receives a per-interface send summary (which NIC, which
+// target, ok/fail + OS error code) for diagnostic logging.
+bool broadcastBeacon(const Beacon& b, uint16_t port, std::string* report = nullptr);
 
 // Send one beacon by UNICAST to ip:port. Used to reply to a received broadcast so the
 // sender discovers us too, even when OUR broadcast can't reach it (VPN split routing,
@@ -26,7 +35,9 @@ bool sendBeaconTo(const Beacon& b, const std::string& ip, uint16_t port);
 bool isPrivateIpv4(const std::string& ip);
 
 // Bind to port and wait up to timeout_ms for a beacon; decode into out. Returns
-// false on timeout, socket error, or an undecodable packet.
-bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out);
+// false on timeout, socket error, or an undecodable packet. If `err` is non-null it
+// receives a non-empty message when the socket/bind fails (not on a plain timeout),
+// so a listener that can never receive is visible in the log.
+bool receiveBeacon(uint16_t port, int timeout_ms, Beacon& out, std::string* err = nullptr);
 
 } // namespace sm::net
